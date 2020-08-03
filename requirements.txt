@@ -1,0 +1,5 @@
+numpy
+torch
+setuptools
+scikit-image
+sklearn
