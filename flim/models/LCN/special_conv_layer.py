@@ -10,6 +10,8 @@ from sklearn.cluster import MiniBatchKMeans, KMeans
 
 import logging
 
+__all__ = ['SpecialConvLayer']
+
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
     "relu": nn.ReLU,
@@ -20,7 +22,61 @@ __operations__ = {
 }
 
 class SpecialConvLayer(nn.Module):
-    def __init__(self, in_channels, kernel_size=3, padding=1, stride=1, bias=False, device='cpu', kmeans_number_of_kernels=None, activation_config=None, pool_config=None):
+    """Special convolutional layer trained from image markers.
+
+    A SpecialConvLayer is a layer that extends ``torch.nn.Module`` with the following operations: marker-based normalization, 2D-convolution, ReLU activation and 2D-pooling.
+    It's kernels a learned from the image markers.
+    
+    Attributes
+    ----------
+    in_channels : int
+        The number of input's channels.
+
+    kernel_size: array_like: 
+        The kernel dimensions. If a single number :math:`k` if provided, it will be interpreted as a kernel :math:`k \times k`.
+
+    padding: array_like: 
+        The number of zeros to add to pad.
+
+    bias : bool 
+        Whether to use bias or not.
+
+    stride : int
+         Stride for convolution.
+
+    out_channels : int 
+        The number of ouput's channels.
+
+    number_of_kernels_per_marker: int
+        The number of kernel per marker.
+        
+    """          
+    def __init__(self, in_channels, kernel_size=3, padding=1, stride=1, bias=False, number_of_kernels_per_marker=16, 
+            activation_config=None, pool_config=None, device='cpu'):
+        """Create layer object.
+
+        Parameters
+        ----------
+        in_channels : int
+            The input channel number.
+        kernel_size : int, optional
+            The kernel dimensions. If a single number :math:`k` if provided, 
+            it will be interpreted as a kernel :math:`k \times k`, by default 3.
+        padding : int, optional
+            The number of zeros to add to pad, by default 1.
+        stride : int, optional
+            Stride for convolution, by default 1
+        bias : bool, optional
+            Whether to use bias or not., by default False
+        number_of_kernels_per_marker : int, optional
+            The number of kernel per marker., by default 16
+        activation_config : [type], optional
+            Activation options. See architecture speficitication format.
+        pool_config : [type], optional
+            Pooling options., by default None
+        device : str, optional
+            Device where to store layer's parameters, by default 'cpu'.
+        """            
         super(SpecialConvLayer, self).__init__()
         
         self.in_channels = in_channels
@@ -30,46 +86,70 @@ class SpecialConvLayer(nn.Module):
         self.bias = bias
         self.out_channels = 0
         
-        self.activation_config = activation_config
-        self.pool_config = pool_config
+        self._activation_config = activation_config
+        self._pool_config = pool_config
         
-        if kmeans_number_of_kernels is None:
-            self.kmeans_number_of_kernels = 16
-        else:
-            self.kmeans_number_of_kernels = kmeans_number_of_kernels
+        self.number_of_kernels_per_marker = number_of_kernels_per_marker
 
-        self.conv = None
-        self.activation = None
-        self.pool = None
+        self._conv = None
+        self._activation = None
+        self._pool = None
 
         self.device = device
-        self.mean_by_channel = 0
-        self.std_by_channel = 1
+        self._mean_by_channel = 0
+        self._std_by_channel = 1
         
-        self.kernels_of_label = []
 
-        self.logger = logging.getLogger()
+        self._logger = logging.getLogger()
         
     def initialize_weights(self, images, markers):
+        """Learn kernel weights from image markers.
+
+        Initialize layer with weights learned from image markers.
+
+        Parameters
+        ----------
+        images : ndarray
+            Array of images with shape :math:`N \times H \times W \times C`.
+        markers : list
+            List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
+        """        
         kernels_weights = self._calculate_weights(images, markers)
         self.out_channels = kernels_weights.shape[0]
         self.conv = Conv2d(self.in_channels, kernels_weights.shape[0], kernel_size=self.kernel_size, stride=self.stride, bias=self.bias, padding=self.padding)
         self.conv.weight = nn.Parameter(torch.Tensor(np.rollaxis(kernels_weights, 3, 1)))
         self.conv.weight.requires_grad = False
-        #self.conv = self.conv.to(self.device)
         
-        #print(self.pool_config['params'])
+        
         if self.activation_config is not None:
-            self.activation = __operations__[self.activation_config['operation']](**self.activation_config['params'])
+            self.activation = __operations__[self._activation_config['operation']](**self._activation_config['params'])
         if self.pool_config is not None:
-            self.pool = __operations__[self.pool_config['operation']](**self.pool_config['params'])
-        
-        #print(self.activation)
-        
+            self.pool = __operations__[self._pool_config['operation']](**self._pool_config['params'])
+          
     def to(self, device):
-        #print("moving to ", device)
-        self.mean_by_channel = self.mean_by_channel.to(device)
-        self.std_by_channel = self.std_by_channel.to(device)
+        """Move layer to ``device``.
+
+        Move layer parameters to some specified device.
+
+        Parameters
+        ----------
+        device : torch.device
+            The device where to move.
+
+        Returns
+        -------
+        Self
+            The layer itself.
+
+
+        Notes
+        ---------
+
+        This method modifies the module in-place.
+        """             
+        self.mean_by_channel = self._mean_by_channel.to(device)
+        self.std_by_channel = self._std_by_channel.to(device)
         
         self.conv = self.conv.to(device)
 
@@ -80,11 +160,26 @@ class SpecialConvLayer(nn.Module):
             self.pool = self.pool.to(device)
         
         return self
-        
+    
     def forward(self, x):
-        self.logger.debug("forwarding in special conv layer. Input shape {}".format(x.size()))
-        mean = self.mean_by_channel.view(1, -1, 1, 1)
-        std = self.std_by_channel.view(1, -1, 1, 1)
+        """Apply special layer to input tensor.
+
+        Apply special layer to a batch of inputs  in the shape :math:`(N \times C \times H \times W)`.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor in the shape :math:`(N \times C \times H \times W)`.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor with shape :math:`(N \times C \times H \times W)`. 
+            The output height and width depends on the paramenters used to define the layer.
+        """        
+        self._logger.debug("forwarding in special conv layer. Input shape {}".format(x.size()))
+        mean = self._mean_by_channel.view(1, -1, 1, 1)
+        std = self._std_by_channel.view(1, -1, 1, 1)
         
         mean = mean.to(x.device)
         std = std.to(x.device)
@@ -103,8 +198,23 @@ class SpecialConvLayer(nn.Module):
         return y
         
     def _calculate_weights(self, images, markers):
+        """Calculate kernels weights from image markers.
+
+        Parameters
+        ----------
+        images : ndarray
+            Array of images with shape :math:`N \times H \times W \times C`.
+        markers : list
+            List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
+
+        Returns
+        -------
+        ndarray
+            Kernels weights in the shape :math:`(N \times C \times H \times W)`.
+        """        
         patches, labels = self._generate_patches(images, markers, self.padding, self.kernel_size, self.in_channels)
-        kernel_weights = self._kmeans_roots(patches, labels, self.kmeans_number_of_kernels)
+        kernel_weights = self._kmeans_roots(patches, labels, self.number_of_kernels_per_marker)
         
         norm = np.linalg.norm(kernel_weights.reshape(kernel_weights.shape[0], -1), axis=0)
         norm = norm.reshape(1, *kernel_weights.shape[1:])
@@ -112,6 +222,29 @@ class SpecialConvLayer(nn.Module):
         return kernel_weights
     
     def _generate_patches(self, images, markers, padding=1, kernel_size=3, in_channels=3):
+        """Get patches from markers pixels.
+
+        Get a patch of size :math:`k \times k` around each markers pixel.
+        
+        ----------
+        images : ndarray
+            Array of images with shape :math:`N \times H \times W \times C`.
+        markers : list
+            List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
+        in_channels : int
+            The input channel number.
+        kernel_size : int, optional
+            The kernel dimensions. If a single number :math:`k` if provided, 
+            it will be interpreted as a kernel :math:`k \times k`, by default 3.
+        padding : int, optional
+            The number of zeros to add to pad, by default 1.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray]
+            A array with all genereated pacthes and array with the label of each patch.
+        """        
         all_patches, all_labels = None, None
         for image, image_markers in zip(images, markers):
             if len(image_markers) == 0:
@@ -148,27 +281,41 @@ class SpecialConvLayer(nn.Module):
         mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
         std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
         
-        #mean_by_channel = images.mean(axis=(0, 1, 2), keepdims=True)
-        #std_by_channel = images.std(axis=(0, 1, 2), keepdims=True)
-        
         self.mean_by_channel = torch.from_numpy(mean_by_channel).float().to(self.device)
         self.std_by_channel = torch.from_numpy(std_by_channel).float().to(self.device)
         
         all_patches = (all_patches - mean_by_channel)/std_by_channel
         
-        #((labels == 1).sum())
-        
         return all_patches, all_labels
     
     def _kmeans_roots(self, patches, labels, n_clusters_per_label, min_number_of_pacthes_per_label=16):
+        """Cluster patch and return the root of each custer.
+
+        Parameters
+        ----------
+        patches : ndarray
+            Array of patches with shape :math:`(N \times H \times W \times C)`
+        labels : ndarray
+            The label of each patch with shape :nath:`(N,)`
+        n_clusters_per_label : int
+            The number os clusters per label.
+        min_number_of_pacthes_per_label : int, optional
+            The mininum number of patches of a given label for the clustering be performed , by default 16.
+
+        Returns
+        -------
+        ndarray
+            A array with all the roots.
+        """        
         roots = None
-        #min_number_of_pacthes_per_label = n_clusters_per_label
+        min_number_of_pacthes_per_label = n_clusters_per_label
         num_classes = labels.max()
         possible_labels = np.unique(labels)
+
         for label in possible_labels:
             patches_of_label = patches[label == labels].astype(np.float32)
             #TODO get a value as an arg?
-            if patches_of_label.shape[0] > n_clusters_per_label:
+            if patches_of_label.shape[0] > min_number_of_pacthes_per_label:
                 kmeans = MiniBatchKMeans(n_clusters=n_clusters_per_label, max_iter=100, random_state = 42)
                 kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
                 
@@ -178,9 +325,6 @@ class SpecialConvLayer(nn.Module):
             
             else:
                 continue
-            #print("There are {} roots of label {}".format(roots_of_label.shape[0], label))
-            
-            self.kernels_of_label.append(roots_of_label.shape[0])
             
             if roots is not None:
                 roots = np.concatenate((roots, roots_of_label))
