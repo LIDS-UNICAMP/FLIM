@@ -15,14 +15,14 @@ from scipy.ndimage import label
 import os.path as path
 import os
 
-import pyift.pyift as ift
-
 import math
 
 from .special_conv_layer import SpecialConvLayer
 from .LCN import LIDSConvNet
 
 from ...utils import utils
+
+__all__ = ['LCNCreator']
 
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
@@ -37,46 +37,82 @@ __operations__ = {
 }
 
 class LCNCreator:
-    def __init__(self, architecture, images, markers, batch_size=32, label_connected_components=True, device='cpu', superpixels_markers = None):
+    """Class to build and a LIDSConvNet
+
+    LCNCreator is reponsable to build a LIDSConvNet given a network architecture, a set of images, and a set of image markers.
+
+    Attributes
+    ----------
+    LCN : LIDSConvNet
+        The neural network built.
     
+    device : str
+        Decive where the computaion is done.
+
+    """    
+    def __init__(self, architecture, images, markers, batch_size=32, label_connected_components=True, device='cpu', superpixels_markers=None):
+        """Initialize the class.
+
+        Parameters
+        ----------
+        architecture : dict
+            Netwoerk's architecture specification.
+        images : ndarray
+            A set of images with size :math:`(N, H, W, C)`.
+        markers : [type]
+            A set of image markes as label images with size :math:`(N, H, W)`. The label 0 denote no label.
+        batch_size : int, optional
+            Batch size, by default 32.
+        label_connected_components : bool, optional
+            Change markers labels so that each connected component has a different label, by default True.
+        device : str, optional
+            Device where to do the computation, by default 'cpu'.
+        superpixels_markers : [type], optional
+            Extra images markers get from superpixel segmentation, by default None.
+        """        
         assert(architecture is not None)
         assert(images is not None)
         assert(markers is not None)
 
         assert(len(images) == len(markers) and len(images) > 0)
-        #structure = np.ones((3, 3, 3), dtype=np.uint8)
-        #markers = label(markers, structure=structure)[0] if label_connected_components else markers
-        markers = utils.label_connected_componentes(markers)
+
+        if label_connected_componentes:
+            markers = utils.label_connected_componentes(markers)
 
         if superpixels_markers is not None:
             indices = np.where(superpixels_markers != 0)
             markers[0, indices[0], indices[1]] = superpixels_markers[indices[0], indices[1]]
+
         markers = markers.astype(np.int)
-        self.feature_extractor = nn.Sequential()
-        #io.imsave('marker.png', utils.normalize_image(markers[0]))
+
+        self._feature_extractor = nn.Sequential()
         
-        self.architecture = architecture
-        self.images = images
-        self.markers = self._prepare_markers(markers)
-        self.in_channels = images[0].shape[-1]
+        self._images = images
+        self._markers = self._prepare_markers(markers)
+        self._architecture = architecture
+        self._in_channels = images[0].shape[-1]
+        self._batch_size = batch_size
+        
         self.device = device 
-        self.batch_size = batch_size
-        
-        self.counter = 0
         
         self.LCN = LIDSConvNet()
 
         self._build()
         
     def _build_feature_extractor(self):
-        architecture = self.architecture['features']
-        images = self.images
-        markers = self.markers
+        """Buid the feature extractor.
+
+        If there is a special convolutional layer, it will be initialize with weights learned from image markers.
+        """ 
+
+        architecture = self._architecture['features']
+        images = self._images
+        markers = self._markers
         device = self.device
         batch_size = 32
         
         input_shape = images[0].shape
-        self.last_conv_layer_out_channels = self.in_channels
+        self.last_conv_layer_out_channels = self._in_channels
         
         for key in architecture:
             layer_config = architecture[key]
@@ -96,7 +132,7 @@ class LCNCreator:
                     pool_config = layer_config['pool']
                 
                 layer = operation(in_channels=self.last_conv_layer_out_channels, **operation_params, activation_config=activation_config, pool_config = pool_config)
-                layer.initialize_weights(images, self.markers)
+                layer.initialize_weights(images, self._markers)
                     
                 self.last_conv_layer_out_channels = layer.out_channels
                 
@@ -115,7 +151,7 @@ class LCNCreator:
                         new_marker.append(new)
                     #print(new_marker)
                     new_markers.append(new_marker)
-                self.markers = new_markers
+                self._markers = new_markers
                 layer = operation(**operation_params)
                 
             elif layer_config['operation'] == "unfold":
@@ -155,6 +191,24 @@ class LCNCreator:
         self.features = images
 
     def _prepare_markers(self, markers):
+        """Convert image markers to the expected format.
+
+        Convert image markers from label images to a list of coordinates.
+
+
+        Parameters
+        ----------
+        markers : ndarray
+            A set of image markers as image labels with size :math:`(N, H, W)`.
+
+        Returns
+        -------
+        list[ndarray]
+            Image marker as a list of coordinates. 
+            For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, 
+            and the third row is the markers pixel labels.
+        """        
         _markers = []
         for m in markers:
             indices = np.where(m != 0)
@@ -167,10 +221,27 @@ class LCNCreator:
         return _markers
          
     def _build(self):
+        """Build the network.
+
+        For now it is only the feature extractor.
+        """        
         self._build_feature_extractor()
             
     def _assert_params(self, params):
+        """Check if the network's architecture specification has the fields necessary to build the network.
 
+        Parameters
+        ----------
+        params : dict
+            The parameters for building a layer.
+
+        Raises
+        ------
+        AssertionError
+            If a operation is not specified.
+        AssertionError
+            If operation parameters are not specified.
+        """        
         if not 'operation' in params:
             raise AssertionError('Layer does not have an operation.')
         
@@ -178,4 +249,11 @@ class LCNCreator:
             raise AssertionError('Layer does not have operation params.')
 
     def get_LIDSConvNet(self):
+        """Get the LIDSConvNet built.
+
+        Returns
+        -------
+        LIDSConvNet
+            The neural network built.
+        """        
         return self.LCN
