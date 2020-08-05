@@ -31,29 +31,25 @@ class SpecialConvLayer(nn.Module):
     ----------
     in_channels : int
         The number of input's channels.
-
     kernel_size: array_like: 
         The kernel dimensions. If a single number :math:`k` if provided, it will be interpreted as a kernel :math:`k \times k`.
-
     padding: array_like: 
         The number of zeros to add to pad.
-
     bias : bool 
         Whether to use bias or not.
-
     stride : int
          Stride for convolution.
-
     out_channels : int 
         The number of ouput's channels.
-
     number_of_kernels_per_marker: int
         The number of kernel per marker.
+    device : str
+        Device where layer's parameters are stored.
         
     """          
     def __init__(self, in_channels, kernel_size=3, padding=1, stride=1, bias=False, number_of_kernels_per_marker=16, 
             activation_config=None, pool_config=None, device='cpu'):
-        """Create layer object.
+        """Initialize the class.
 
         Parameters
         ----------
@@ -110,7 +106,7 @@ class SpecialConvLayer(nn.Module):
         Parameters
         ----------
         images : ndarray
-            Array of images with shape :math:`N \times H \times W \times C`.
+            Array of images with shape :math:`(N, H, W, C)`.
         markers : list
             List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
             The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
@@ -162,19 +158,19 @@ class SpecialConvLayer(nn.Module):
         return self
     
     def forward(self, x):
-        """Apply special layer to input tensor.
+        """Apply special layer to an input tensor.
 
-        Apply special layer to a batch of inputs  in the shape :math:`(N \times C \times H \times W)`.
+        Apply special layer to a batch images.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor in the shape :math:`(N \times C \times H \times W)`.
+            Input tensor in the shape :math:`(N, C, H, W)`.
 
         Returns
         -------
         torch.Tensor
-            Output tensor with shape :math:`(N \times C \times H \times W)`. 
+            Output tensor with shape :math:`(N, C^\prime,  H, W)`. 
             The output height and width depends on the paramenters used to define the layer.
         """        
         self._logger.debug("forwarding in special conv layer. Input shape {}".format(x.size()))
@@ -203,7 +199,7 @@ class SpecialConvLayer(nn.Module):
         Parameters
         ----------
         images : ndarray
-            Array of images with shape :math:`N \times H \times W \times C`.
+            Array of images with shape :math:`(N, H, W, C)`.
         markers : list
             List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
             The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
@@ -228,7 +224,7 @@ class SpecialConvLayer(nn.Module):
         
         ----------
         images : ndarray
-            Array of images with shape :math:`N \times H \times W \times C`.
+            Array of images with shape :math:`(N, H, W, C)`.
         markers : list
             List of markers. For each image there is an ndarry with shape :math:`3 \times N` where :math:`N` is the number of markers pixels.
             The first row is the markers pixels :math:`x`-coordinates, second row is the markers pixels :math:`y`-coordinates, and the third row is the markers pixel labels. 
@@ -294,7 +290,7 @@ class SpecialConvLayer(nn.Module):
         Parameters
         ----------
         patches : ndarray
-            Array of patches with shape :math:`(N \times H \times W \times C)`
+            Array of patches with shape :math:`((N, H, W, C))`
         labels : ndarray
             The label of each patch with shape :nath:`(N,)`
         n_clusters_per_label : int

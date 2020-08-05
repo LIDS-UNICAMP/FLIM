@@ -3,6 +3,8 @@ import torch.nn as nn
 
 import logging
 
+__all__ = ["LIDSConvNet"]
+
 class LIDSConvNet(nn.Sequential):
     """A convolutional neural network.
 

@@ -20,7 +20,7 @@ import math
 from .special_conv_layer import SpecialConvLayer
 from .LCN import LIDSConvNet
 
-from ...utils import utils
+from ...utils import label_connected_componentes
 
 __all__ = ['LCNCreator']
 
@@ -77,7 +77,7 @@ class LCNCreator:
         assert(len(images) == len(markers) and len(images) > 0)
 
         if label_connected_componentes:
-            markers = utils.label_connected_componentes(markers)
+            markers = label_connected_componentes(markers)
 
         if superpixels_markers is not None:
             indices = np.where(superpixels_markers != 0)
