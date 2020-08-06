@@ -12,7 +12,7 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../..'))  
+sys.path.insert(0, os.path.abspath('../../'))
 
 
 # -- Project information -----------------------------------------------------
@@ -37,13 +37,13 @@ extensions = [
     'sphinx.ext.autosummary', 
     'sphinx.ext.intersphinx', 
     'sphinx.ext.viewcode', 
-    'sphinx_autodoc_typehints',
+    'sphinx_autodoc_typehints'
 ]
 
 
 autosummary_generate = True
 imported_members=True
-autoclass_content = "both"
+autoclass_content = "init"
 html_show_sourcelink = False
 autodoc_inherit_docstrings = True
 

@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='FLIM',
-    version='0.0.1',
+    version='0.1',
     author='Italos Estilon de Souza',
     author_email='italosestilon@gmail.com',
     packages=setuptools.find_packages(),

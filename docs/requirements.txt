@@ -2,3 +2,8 @@ sphinx
 numpydoc
 sphinx-rtd-theme
 sphinx-autodoc-typehints
+numpy
+torch
+setuptools
+scikit-image
+sklearn
