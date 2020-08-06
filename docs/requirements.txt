@@ -1,5 +1,4 @@
-sphinx-rtd-theme
-sphinx-autodoc-typehints
 sphinx
 numpydoc
-flim
+sphinx-rtd-theme
+sphinx-autodoc-typehints

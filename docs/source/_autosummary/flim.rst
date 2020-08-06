@@ -21,10 +21,9 @@ flim
 
 
 
-.. rubric:: Modules
-
 .. autosummary::
    :toctree:
+   :template: custom-module-template.rst
    :recursive:
 
    flim.models

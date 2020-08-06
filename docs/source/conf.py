@@ -12,7 +12,7 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../../'))
+sys.path.insert(0, os.path.abspath('../..'))  
 
 
 # -- Project information -----------------------------------------------------
@@ -20,6 +20,10 @@ sys.path.insert(0, os.path.abspath('../../'))
 project = 'FLIM'
 copyright = '2020, Laboratory of Image Data Science'
 author = 'Italos Estilon de Souza'
+release = '0.1.0a.1'
+version = '0.1'
+
+# The full version, including alpha/beta/rc tags
 
 
 # -- General configuration ---------------------------------------------------
@@ -27,13 +31,25 @@ author = 'Italos Estilon de Souza'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['numpydoc', 'sphinx.ext.coverage',
-    'sphinx.ext.viewcode', 'sphinx.ext.imgmath']
+extensions = [
+    'numpydoc',
+    'sphinx.ext.autodoc',  
+    'sphinx.ext.autosummary', 
+    'sphinx.ext.intersphinx', 
+    'sphinx.ext.viewcode', 
+    'sphinx_autodoc_typehints',
+]
 
-numpydoc_show_inherited_class_members = False
-autosummary_generate = True  # Turn on sphinx.ext.autosummary
+
+autosummary_generate = True
+imported_members=True
 autoclass_content = "both"
+html_show_sourcelink = False
 autodoc_inherit_docstrings = True
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3/", None),
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -49,7 +65,11 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+on_rtd = os.environ.get("READTHEDOCS", None) == "True"
+if not on_rtd:  # only import and set the theme if we're building docs locally
+    import sphinx_rtd_theme
+    html_theme = "sphinx_rtd_theme"
+    html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
