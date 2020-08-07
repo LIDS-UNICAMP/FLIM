@@ -3,3 +3,10 @@ torch
 setuptools
 scikit-image
 sklearn
+pylint
+pep8
+pyflakes
+mccabe
+pydocstyle
+flake8
+pylama
