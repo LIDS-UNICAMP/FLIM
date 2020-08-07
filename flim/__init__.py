@@ -1,3 +1,1 @@
-"""
-API reference documentation for FLIM package.
-"""
+"""API reference documentation for FLIM package."""

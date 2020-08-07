@@ -1,9 +1,11 @@
-from setuptools import setup
+"""Package setup."""
+
+import setuptools
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-setup(
+setuptools.setup(
     name='FLIM',
     version='0.1',
     author='Italos Estilon de Souza',
@@ -21,7 +23,8 @@ setup(
         "Environment :: Console :: GPU :: NVIDIA CUDA",
         "Intended Audience :: Education :: Developers",
         "Natural Language :: English",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence :: Image Recognition",
+        "Topic :: Scientific/Engineering :: \
+            Artificial Intelligence :: Image Recognition",
         "Topic :: Software Development :: Libraries"
     ],
     install_requires=[

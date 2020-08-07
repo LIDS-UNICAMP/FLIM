@@ -42,7 +42,7 @@ extensions = [
 
 
 autosummary_generate = True
-imported_members=True
+imported_members = True
 autoclass_content = "init"
 html_show_sourcelink = False
 autodoc_inherit_docstrings = True

@@ -2,7 +2,7 @@ flim.utils
 ==========
 
 .. automodule:: flim.utils
-
+   :members:
    
    
    

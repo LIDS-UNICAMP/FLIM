@@ -39,7 +39,7 @@ class LIDSConvNet(nn.Sequential):
         Returns
         -------
         torch.Tensor
-            Output tensor with shape :math:`(N, C^\prime,  H, W)`. 
+            Output tensor with shape :math:`(N, C^\prime,  H, W)`.
             The output height and width depends on the paramenters \
             used to define the layer.
 

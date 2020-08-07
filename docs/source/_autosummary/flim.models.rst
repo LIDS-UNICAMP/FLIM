@@ -2,7 +2,7 @@ flim.models
 ===========
 
 .. automodule:: flim.models
-
+   :members:
    
    
    
@@ -26,5 +26,5 @@ flim.models
    :template: custom-module-template.rst
    :recursive:
 
-   flim.models.LCN
+   flim.models.lcn
 
