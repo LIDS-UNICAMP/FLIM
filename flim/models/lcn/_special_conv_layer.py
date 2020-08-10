@@ -145,11 +145,11 @@ class SpecialConvLayer(nn.Module):
 
         self._conv.weight.requires_grad = False
         
-        if self.activation_config is not None:
+        if self._activation_config is not None:
             self._activation = __operations__[
                 self._activation_config['operation']](
                     **self._activation_config['params'])
-        if self.pool_config is not None:
+        if self._pool_config is not None:
             self._pool = __operations__[self._pool_config['operation']](
                 **self._pool_config['params'])
           
@@ -177,7 +177,7 @@ class SpecialConvLayer(nn.Module):
         self._mean_by_channel = self._mean_by_channel.to(device)
         self._std_by_channel = self._std_by_channel.to(device)
         
-        self._conv = self.conv.to(device)
+        self._conv = self._conv.to(device)
 
         if self._activation is not None:
             self._activation = self._activation.to(device)
@@ -216,14 +216,14 @@ class SpecialConvLayer(nn.Module):
         
         x = (x - mean)/std
         
-        y = self.conv(x)
+        y = self._conv(x)
 
-        if self.activation is not None:
-            y = self.activation.forward(y)
+        if self._activation is not None:
+            y = self._activation.forward(y)
         
-        if self.pool is not None:
+        if self._pool is not None:
             # print("max pooling")
-            y = self.pool.forward(y)
+            y = self._pool.forward(y)
         
         return y
         
