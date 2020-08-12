@@ -11,6 +11,8 @@ from skimage.util import view_as_windows, pad
 
 from sklearn.cluster import MiniBatchKMeans
 
+from scipy.spatial import distance
+
 
 __all__ = ['SpecialConvLayer']
 
@@ -175,10 +177,7 @@ class SpecialConvLayer(nn.Module):
             images.shape[:-1] == new_markers.shape, \
             "Images and markers must have compatible shapes"
 
-        if self.in_channels != images.shape[-1]:
-            use_all_patches = True
-        else:
-            use_all_patches = False
+        use_all_patches = self.in_channels != images.shape[-1]
 
         self.in_channels = images.shape[-1]
 
@@ -238,8 +237,26 @@ class SpecialConvLayer(nn.Module):
         self._conv.to(self.device)
 
         self._conv.weight.requires_grad = False
+
+    def remove_similirar_filters(self, similarity_level=0.85):
+        """Remove redundant filters.
+
+        Remove redundant filter bases on inner product.
+
+        Parameters
+        ----------
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+            All filters in this layer has euclidean norm equal to 1.
+
+        """
+        assert 0 < similarity_level <= 1,\
+            "Similarity must be in range (0, 1]"
         
-          
+
+      
     def to(self, device):
         """Move layer to ``device``.
 
@@ -492,3 +509,28 @@ def _kmeans_roots(patches,
     
     roots = roots.reshape(-1, *patches.shape[1:])
     return roots
+
+
+def _similarity_matrix(filters):
+    """Compute similarity matrix.
+
+    The similarity between two filter is the inner product between them.
+
+    Parameters
+    ----------
+    filters : torch.Tensor
+        Array of filters.
+
+    Returns
+    -------
+    ndarray
+        A matrix N x N.
+
+    """
+    assert filters is not None, "Filter must be provided"
+
+    _filters = filters.detach().flatten(1).cpu().numpy()
+
+    similiraty_matrix = distance.pdist(_filters, metric=np.inner)
+
+    return similiraty_matrix
