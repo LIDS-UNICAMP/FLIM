@@ -10,7 +10,7 @@ import numpy as np
 from ._special_conv_layer import SpecialConvLayer
 from ._lcn import LIDSConvNet
 
-from ...utils import label_connected_componentes
+from ...utils import label_connected_components
 
 __all__ = ['LCNCreator']
 
@@ -52,7 +52,7 @@ class LCNCreator:
                  images,
                  markers,
                  batch_size=32,
-                 label_connected_components=True,
+                 relabel_markers=True,
                  device='cpu',
                  superpixels_markers=None):
         """Initialize the class.
@@ -63,17 +63,17 @@ class LCNCreator:
             Netwoerk's architecture specification.
         images : ndarray
             A set of images with size :math:`(N, H, W, C)`.
-        markers : [type]
+        markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
             The label 0 denote no label.
         batch_size : int, optional
             Batch size, by default 32.
-        label_connected_components : bool, optional
+        relabel_markers : bool, optional
             Change markers labels so that each connected component has a \
             different label, by default True.
         device : str, optional
             Device where to do the computation, by default 'cpu'.
-        superpixels_markers : [type], optional
+        superpixels_markers : ndarray, optional
             Extra images markers get from superpixel segmentation, \
             by default None.
 
@@ -84,8 +84,8 @@ class LCNCreator:
 
         assert(len(images) == len(markers) and len(images) > 0)
 
-        if label_connected_components:
-            markers = label_connected_componentes(markers)
+        if relabel_markers:
+            markers = label_connected_components(markers)
 
         if superpixels_markers is not None:
             indices = np.where(superpixels_markers != 0)
@@ -97,7 +97,7 @@ class LCNCreator:
         self._feature_extractor = nn.Sequential()
 
         self._images = images
-        self._markers = _prepare_markers(markers)
+        self._markers = markers
         self._architecture = architecture
         self._in_channels = images[0].shape[-1]
         self._batch_size = batch_size
@@ -196,7 +196,80 @@ class LCNCreator:
                 images = outputs.permute(0, 2, 3, 1).detach().numpy()
     
             self.LCN.feature_extractor.add_module(key, layer)
-         
+
+    def update_model(self,
+                     model,
+                     images,
+                     markers,
+                     relabel_markers=True,
+                     retrain=False):
+        """Update model with new image markers.
+
+        Update the model feature extractor with new markers.
+        It adds new filters based on new markers.
+        If the old markers are used, the whole model is retrained.
+
+        Parameters
+        ----------
+        model : LIDSConvNet
+            A LIDSConvNet model.
+        images : ndarray
+            A set of images with size :math:`(N, H, W, C)`.
+        markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label.
+        relabel_markers : bool, optional
+            Change markers labels so that each connected component has a \
+            different label, by default True.
+        retrain : bool, optional
+            If False, new filters are created from the new markers.
+            If True, the whole model is retrained. By default Fasle.
+            Pass True if there are new images.
+    
+        """
+        assert model is not None or not isinstance(LIDSConvNet), \
+            "A LIDSConvNet model must be provided"
+
+        assert images is not None and markers is not None and \
+            images.shape[0] > 0, "Images and markers must be provided"
+        
+        assert images.shape[:-1] == markers.shape, \
+            "Images and markers must have compatible shapes"
+
+        if relabel_markers:
+            markers = label_connected_components(markers)
+        
+        if retrain:
+            self._images = images
+            self._markers = markers
+            self._build_feature_extractor()
+            return
+
+        _images = images
+        old_markers = self._markers
+
+        new_makers = markers
+        new_makers[markers == old_markers] = 0
+
+        for layer_name, layer in model.feature_extractor.named_children():
+            if isinstance(layer, SpecialConvLayer):
+                if isinstance(_images, torch.Tensor):
+                    _images = _images.detach().permute(
+                        0, 2, 3, 1).cpu().numpy()
+                layer.update_weights(_images, old_markers, new_makers)
+                layer.to(self.device)
+                torch_images = torch.Tensor(_images)
+                torch_images = torch_images.permute(0, 3, 1, 2).to(self.device)
+                _images = torch_images
+
+            _y = layer.forward(_images)
+            _images = _y
+
+        mask = markers != old_markers
+        markers[mask] = old_markers[mask]
+
+        self._markers = markers
+
     def _build(self):
         """Build the network.
 

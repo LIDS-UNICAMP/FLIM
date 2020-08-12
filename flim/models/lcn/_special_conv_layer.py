@@ -152,6 +152,104 @@ class SpecialConvLayer(nn.Module):
         if self._pool_config is not None:
             self._pool = __operations__[self._pool_config['operation']](
                 **self._pool_config['params'])
+
+    def update_weights(self, images, old_markers, new_markers):
+        """Learn kernel weights from image markers.
+
+        Initialize layer with weights learned from image markers.
+
+        Parameters
+        ----------
+        images : ndarray
+            Array of images with shape :math:`(N, H, W, C)`.
+        old_markers : list
+            List of markers. For each image there is an ndarry with shape \
+            :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, \
+            second row is the markers pixels :math:`y`-coordinates, \
+            and the third row is the markers pixel labels.
+        new_markers : list
+            List of markers. For each image there is an ndarry with shape \
+            :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, \
+            second row is the markers pixels :math:`y`-coordinates, \
+            and the third row is the markers pixel labels.
+
+        """
+        assert images is not None and old_markers is not None \
+            and new_markers is not None, \
+            "Images, old marker and new markers must be provided"
+        
+        assert images.shape[:-1] == old_markers.shape and \
+            images.shape[:-1] == new_markers.shape, \
+            "Images and markers must have compatible shapes"
+
+        if self.in_channels != images.shape[-1]:
+            use_all_patches = True
+        else:
+            use_all_patches = False
+
+        self.in_channels = images.shape[-1]
+
+        old_markers_patches, old_markers_labels = self._generate_patches(images,
+                                                        old_markers,
+                                                        self.padding,
+                                                        self.kernel_size,
+                                                        self.in_channels)
+
+        patches, labels = self._generate_patches(images,
+                                                 new_markers,
+                                                 self.padding,
+                                                 self.kernel_size,
+                                                 self.in_channels)
+
+        all_patches = np.concatenate((old_markers_patches, patches))
+        all_labels = np.concatenate((old_markers_labels, labels))
+
+        mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
+        
+        self._mean_by_channel = \
+            torch.from_numpy(mean_by_channel).float().to(self.device)
+        self._std_by_channel = \
+            torch.from_numpy(std_by_channel).float().to(self.device)
+ 
+        if use_all_patches:
+            patches = all_patches
+            labels = all_labels
+        
+        patches = (patches - mean_by_channel)/std_by_channel
+        
+        kernel_weights = _kmeans_roots(patches,
+                                       labels,
+                                       self.number_of_kernels_per_marker)
+        
+        norm = np.linalg.norm(
+            kernel_weights.reshape(kernel_weights.shape[0], -1), axis=0)
+        norm = norm.reshape(1, *kernel_weights.shape[1:])
+        kernel_weights = kernel_weights/norm
+
+        if not use_all_patches:
+            old_weights = self._conv.weight.detach().permute(0, 2, 3, 1).cpu().numpy()
+
+            kernel_weights = np.concatenate((old_weights, kernel_weights))
+
+        self.out_channels = kernel_weights.shape[0]
+
+        self._conv = Conv2d(self.in_channels,
+                            kernel_weights.shape[0],
+                            kernel_size=self.kernel_size,
+                            stride=self.stride,
+                            bias=self.bias,
+                            padding=self.padding)
+
+        self._conv.weight = nn.Parameter(
+            torch.Tensor(np.rollaxis(kernel_weights, 3, 1)))
+
+        self._conv.to(self.device)
+
+        self._conv.weight.requires_grad = False
+        
           
     def to(self, device):
         """Move layer to ``device``.
@@ -178,6 +276,8 @@ class SpecialConvLayer(nn.Module):
         self._std_by_channel = self._std_by_channel.to(device)
         
         self._conv = self._conv.to(device)
+
+        self.device = device
 
         if self._activation is not None:
             self._activation = self._activation.to(device)
@@ -240,6 +340,7 @@ class SpecialConvLayer(nn.Module):
             The first row is the markers pixels :math:`x`-coordinates, \
             second row is the markers pixels :math:`y`-coordinates, \
             and the third row is the markers pixel labels.
+        updating : bool
 
         Returns
         -------
@@ -253,6 +354,16 @@ class SpecialConvLayer(nn.Module):
                                                  self.padding,
                                                  self.kernel_size,
                                                  self.in_channels)
+
+        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+        
+        self._mean_by_channel = \
+            torch.from_numpy(mean_by_channel).float().to(self.device)
+        self._std_by_channel = \
+            torch.from_numpy(std_by_channel).float().to(self.device)
+        
+        patches = (patches - mean_by_channel)/std_by_channel
 
         kernel_weights = _kmeans_roots(patches,
                                        labels,
@@ -313,10 +424,11 @@ class SpecialConvLayer(nn.Module):
 
             shape = patches.shape
             image_shape = image.shape
-            
-            markers_x = image_markers[0]
-            markers_y = image_markers[1]
-            labels = image_markers[2]
+
+            indices = np.where(image_markers != 0)
+            markers_x = indices[0]
+            markers_y = indices[1]
+            labels = image_markers[indices] - 1
             
             mask = np.logical_and(
                 markers_x < image_shape[0], markers_y < image_shape[1])
@@ -334,16 +446,6 @@ class SpecialConvLayer(nn.Module):
             else:
                 all_patches = np.concatenate((all_patches, generated_patches))
                 all_labels = np.concatenate((all_labels, labels))
-        
-        mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
-        
-        self._mean_by_channel = \
-            torch.from_numpy(mean_by_channel).float().to(self.device)
-        self._std_by_channel = \
-            torch.from_numpy(std_by_channel).float().to(self.device)
-        
-        all_patches = (all_patches - mean_by_channel)/std_by_channel
         
         return all_patches, all_labels
 

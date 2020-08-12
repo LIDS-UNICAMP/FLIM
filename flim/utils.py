@@ -7,10 +7,10 @@ import numpy as np
 
 from scipy.ndimage import label
 
-__all__ = ['label_connected_componentes']
+__all__ = ['label_connected_components']
 
 
-def label_connected_componentes(label_image):
+def label_connected_components(label_image):
     """Label connected components in a label image.
 
     Create a new label image where labels are changed so that each \
