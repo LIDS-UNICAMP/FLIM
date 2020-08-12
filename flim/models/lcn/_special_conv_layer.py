@@ -122,12 +122,9 @@ class SpecialConvLayer(nn.Module):
         ----------
         images : ndarray
             Array of images with shape :math:`(N, H, W, C)`.
-        markers : list
-            List of markers. For each image there is an ndarry with shape \
-            :math:`3 \times N` where :math:`N` is the number of markers pixels.
-            The first row is the markers pixels :math:`x`-coordinates, \
-            second row is the markers pixels :math:`y`-coordinates, \
-            and the third row is the markers pixel labels.
+        markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label.
 
         """
         kernels_weights = self._calculate_weights(images, markers)
@@ -162,18 +159,12 @@ class SpecialConvLayer(nn.Module):
         ----------
         images : ndarray
             Array of images with shape :math:`(N, H, W, C)`.
-        old_markers : list
-            List of markers. For each image there is an ndarry with shape \
-            :math:`3 \times N` where :math:`N` is the number of markers pixels.
-            The first row is the markers pixels :math:`x`-coordinates, \
-            second row is the markers pixels :math:`y`-coordinates, \
-            and the third row is the markers pixel labels.
-        new_markers : list
-            List of markers. For each image there is an ndarry with shape \
-            :math:`3 \times N` where :math:`N` is the number of markers pixels.
-            The first row is the markers pixels :math:`x`-coordinates, \
-            second row is the markers pixels :math:`y`-coordinates, \
-            and the third row is the markers pixel labels.
+        old_markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label.
+        new_markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label.
 
         """
         assert images is not None and old_markers is not None \
@@ -191,11 +182,9 @@ class SpecialConvLayer(nn.Module):
 
         self.in_channels = images.shape[-1]
 
-        old_markers_patches, old_markers_labels = self._generate_patches(images,
-                                                        old_markers,
-                                                        self.padding,
-                                                        self.kernel_size,
-                                                        self.in_channels)
+        old_markers_patches, old_markers_labels = self._generate_patches(
+            images, old_markers, self.padding,
+            self.kernel_size, self.in_channels)
 
         patches, labels = self._generate_patches(images,
                                                  new_markers,
