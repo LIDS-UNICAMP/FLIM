@@ -212,10 +212,12 @@ class SpecialConvLayer(nn.Module):
                                        labels,
                                        self.number_of_kernels_per_marker)
         
-        norm = np.linalg.norm(
-            kernel_weights.reshape(kernel_weights.shape[0], -1), axis=0)
-        norm = norm.reshape(1, *kernel_weights.shape[1:])
+        kernels_shape = kernel_weights.shape
+        kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
+        norm = np.linalg.norm(kernel_weights, axis=1)
+        norm = np.expand_dims(norm, 1)
         kernel_weights = kernel_weights/norm
+        kernel_weights = kernel_weights.reshape(kernels_shape)
 
         if not use_all_patches:
             old_weights = self._conv.weight.detach().permute(0, 2, 3, 1).cpu().numpy()
@@ -238,7 +240,7 @@ class SpecialConvLayer(nn.Module):
 
         self._conv.weight.requires_grad = False
 
-    def remove_similirar_filters(self, similarity_level=0.85):
+    def remove_similar_filters(self, similarity_level=0.85):
         """Remove redundant filters.
 
         Remove redundant filter bases on inner product.
@@ -254,8 +256,37 @@ class SpecialConvLayer(nn.Module):
         """
         assert 0 < similarity_level <= 1,\
             "Similarity must be in range (0, 1]"
-        
 
+        filters = self._conv.weight
+
+        similarity_matrix = _compute_similarity_matrix(filters)
+
+        keep_filter = np.full(filters.size(0), True, np.bool)
+
+        for i in range(0, filters.size(0)):
+            if keep_filter[i]:
+
+                mask = similarity_matrix[i] >= similarity_level
+                indices = np.where(mask)
+
+                keep_filter[indices] = False
+        
+        selected_filters = filters[keep_filter]
+
+        self.out_channels = selected_filters.size(0)
+
+        self._conv = Conv2d(self.in_channels,
+                            selected_filters.size(0),
+                            kernel_size=self.kernel_size,
+                            stride=self.stride,
+                            bias=self.bias,
+                            padding=self.padding)
+
+        self._conv.weight = nn.Parameter(selected_filters)
+
+        self._conv.to(self.device)
+
+        self._conv.weight.requires_grad = False
       
     def to(self, device):
         """Move layer to ``device``.
@@ -374,11 +405,13 @@ class SpecialConvLayer(nn.Module):
         kernel_weights = _kmeans_roots(patches,
                                        labels,
                                        self.number_of_kernels_per_marker)
-        
-        norm = np.linalg.norm(
-            kernel_weights.reshape(kernel_weights.shape[0], -1), axis=0)
-        norm = norm.reshape(1, *kernel_weights.shape[1:])
+
+        kernels_shape = kernel_weights.shape
+        kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
+        norm = np.linalg.norm(kernel_weights, axis=1)
+        norm = np.expand_dims(norm, 1)
         kernel_weights = kernel_weights/norm
+        kernel_weights = kernel_weights.reshape(kernels_shape)
         return kernel_weights
     
     def _generate_patches(self,
@@ -511,7 +544,7 @@ def _kmeans_roots(patches,
     return roots
 
 
-def _similarity_matrix(filters):
+def _compute_similarity_matrix(filters):
     """Compute similarity matrix.
 
     The similarity between two filter is the inner product between them.
@@ -533,4 +566,4 @@ def _similarity_matrix(filters):
 
     similiraty_matrix = distance.pdist(_filters, metric=np.inner)
 
-    return similiraty_matrix
+    return distance.squareform(similiraty_matrix)

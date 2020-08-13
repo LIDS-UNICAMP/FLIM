@@ -107,14 +107,24 @@ class LCNCreator:
         self.device = device
         
         self.LCN = LIDSConvNet()
-
-        self._build()
         
-    def _build_feature_extractor(self):
+    def build_feature_extractor(self,
+                                remove_similar_filters=False,
+                                similarity_level=0.85):
         """Buid the feature extractor.
 
         If there is a special convolutional layer, \
         it will be initialize with weights learned from image markers.
+
+        Parameters
+        ----------
+        remove_similar_filters : bool, optional
+            Keep only one of a set of similar filters, by default False.
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+
         """
         architecture = self._architecture['features']
         images = self._images
@@ -148,6 +158,9 @@ class LCNCreator:
                     pool_config=pool_config)
 
                 layer.initialize_weights(images, self._markers)
+
+                if remove_similar_filters:
+                    layer.remove_similar_filters(similarity_level)
                     
                 self.last_conv_layer_out_channels = layer.out_channels
                 
@@ -202,7 +215,9 @@ class LCNCreator:
                      images,
                      markers,
                      relabel_markers=True,
-                     retrain=False):
+                     retrain=False,
+                     remove_similar_filters=False,
+                     similarity_level=0.85):
         """Update model with new image markers.
 
         Update the model feature extractor with new markers.
@@ -225,6 +240,12 @@ class LCNCreator:
             If False, new filters are created from the new markers.
             If True, the whole model is retrained. By default Fasle.
             Pass True if there are new images.
+        remove_similar_filters : bool, optional
+            Keep only one of a set of similar filters, by default False.
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
     
         """
         assert model is not None or not isinstance(LIDSConvNet), \
@@ -242,7 +263,8 @@ class LCNCreator:
         if retrain:
             self._images = images
             self._markers = markers
-            self._build_feature_extractor()
+            self.build_feature_extractor(
+                remove_similar_filters, similarity_level)
             return
 
         _images = images
@@ -251,12 +273,16 @@ class LCNCreator:
         new_makers = markers
         new_makers[markers == old_markers] = 0
 
-        for layer_name, layer in model.feature_extractor.named_children():
+        for _, layer in model.feature_extractor.named_children():
             if isinstance(layer, SpecialConvLayer):
                 if isinstance(_images, torch.Tensor):
                     _images = _images.detach().permute(
                         0, 2, 3, 1).cpu().numpy()
                 layer.update_weights(_images, old_markers, new_makers)
+
+                if remove_similar_filters:
+                    layer.remove_similar_filters(similarity_level)
+
                 layer.to(self.device)
                 torch_images = torch.Tensor(_images)
                 torch_images = torch_images.permute(0, 3, 1, 2).to(self.device)
@@ -269,13 +295,6 @@ class LCNCreator:
         markers[mask] = old_markers[mask]
 
         self._markers = markers
-
-    def _build(self):
-        """Build the network.
-
-        For now it is only the feature extractor.
-        """
-        self._build_feature_extractor()
 
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
