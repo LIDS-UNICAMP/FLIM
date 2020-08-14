@@ -84,9 +84,6 @@ class LCNCreator:
 
         assert(len(images) == len(markers) and len(images) > 0)
 
-        if relabel_markers:
-            markers = label_connected_components(markers)
-
         if superpixels_markers is not None:
             indices = np.where(superpixels_markers != 0)
             markers[0, indices[0], indices[1]] = \
@@ -95,7 +92,7 @@ class LCNCreator:
         markers = markers.astype(np.int)
 
         self._feature_extractor = nn.Sequential()
-
+        self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
         self._architecture = architecture
@@ -129,6 +126,9 @@ class LCNCreator:
         architecture = self._architecture['features']
         images = self._images
         markers = self._markers
+        
+        if self._relabel_markers:
+            markers = label_connected_components(markers)
 
         batch_size = 32
 
@@ -209,6 +209,8 @@ class LCNCreator:
                 images = outputs.permute(0, 2, 3, 1).detach().numpy()
     
             self.LCN.feature_extractor.add_module(key, layer)
+            
+            torch.cuda.empty_cache()
 
     def update_model(self,
                      model,
@@ -256,9 +258,6 @@ class LCNCreator:
         
         assert images.shape[:-1] == markers.shape, \
             "Images and markers must have compatible shapes"
-
-        if relabel_markers:
-            markers = label_connected_components(markers)
         
         if retrain:
             self._images = images
@@ -267,18 +266,24 @@ class LCNCreator:
                 remove_similar_filters, similarity_level)
             return
 
+        markers = markers.astype(np.int)
+
         _images = images
         old_markers = self._markers
 
-        new_makers = markers
-        new_makers[markers == old_markers] = 0
+        new_markers = markers
+        mask = np.logical_and(markers != 0, old_markers != 0)
+        new_markers[mask] = 0
+
+        old_markers_relabeled = label_connected_components(old_markers)
+        new_makers_relabeled = label_connected_components(new_markers)
 
         for _, layer in model.feature_extractor.named_children():
             if isinstance(layer, SpecialConvLayer):
                 if isinstance(_images, torch.Tensor):
                     _images = _images.detach().permute(
                         0, 2, 3, 1).cpu().numpy()
-                layer.update_weights(_images, old_markers, new_makers)
+                layer.update_weights(_images, old_markers_relabeled, new_makers_relabeled)
 
                 if remove_similar_filters:
                     layer.remove_similar_filters(similarity_level)
@@ -291,7 +296,6 @@ class LCNCreator:
             _y = layer.forward(_images)
             _images = _y
 
-        mask = markers != old_markers
         markers[mask] = old_markers[mask]
 
         self._markers = markers
