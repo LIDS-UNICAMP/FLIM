@@ -130,7 +130,7 @@ class LCNCreator:
         if self._relabel_markers:
             markers = label_connected_components(markers)
 
-        batch_size = 32
+        batch_size = self._batch_size
 
         self.last_conv_layer_out_channels = self._in_channels
         
