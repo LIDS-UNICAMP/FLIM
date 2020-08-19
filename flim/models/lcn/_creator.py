@@ -157,7 +157,7 @@ class LCNCreator:
                     activation_config=activation_config,
                     pool_config=pool_config)
 
-                layer.initialize_weights(images, self._markers)
+                layer.initialize_weights(images, markers)
 
                 if remove_similar_filters:
                     layer.remove_similar_filters(similarity_level)
@@ -211,6 +211,8 @@ class LCNCreator:
             self.LCN.feature_extractor.add_module(key, layer)
             
             torch.cuda.empty_cache()
+
+        self._markers = markers
 
     def update_model(self,
                      model,
