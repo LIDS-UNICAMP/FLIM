@@ -47,11 +47,15 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
+        input_shape = x.size()
+
         _y = self.feature_extractor(x)
         
-        x = _y
+        x = _y.permute(0, 2, 3, 1)
 
         _y = self.classifier.forward(x)
+
+        _y = _y.view(input_shape[0],*input_shape[2:4], -1).permute(0, 3, 1, 2)
 
         return _y
 

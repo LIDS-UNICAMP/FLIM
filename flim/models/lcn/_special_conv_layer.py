@@ -533,7 +533,8 @@ def _kmeans_roots(patches,
                 patches_of_label.shape[0], -1)
         
         else:
-            continue
+            roots_of_label = patches_of_label.reshape(
+                patches_of_label.shape[0], -1)
         
         if roots is not None:
             roots = np.concatenate((roots, roots_of_label))

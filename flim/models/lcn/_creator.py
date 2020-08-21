@@ -227,38 +227,44 @@ class LCNCreator:
             in_features = first_layer['params']['kernel_size']**2 * self.last_conv_layer_out_channels
             output_shape = self._input_shape
         else:
-            in_features = self._input_shape * self.last_conv_layer_out_channels
+            in_features = self.last_conv_layer_out_channels
             output_shape = class_number
 
         architecture['layers']['linear1']['params']['in_features'] = in_features
         
         mlp = MLP(self._architecture['mlp'], output_shape)
+        mlp.to(self.device)
         self.LCN.classifier = mlp
 
     def train_mlp(self,
-                  epochs=30,
+                  epochs=10,
                   batch_size=256,
                   learning_rate=0.0001,
-                  weight_decay=0.001, momentum=0.9,
-                  device='cpu'):
+                  weight_decay=0.001, momentum=0.9):
+        device = self.device
         mlp = self.LCN.classifier
         torch_input = torch.from_numpy(
             self._images).permute(0, 3, 1, 2).float().to(self.device)
-        features = self.LCN.feature_extractor(torch_input)
+        features = self.LCN.feature_extractor(torch_input).permute(0, 2, 3, 1)
         
         
         optimizer = optim.SGD(mlp.parameters(), lr=learning_rate,
                       momentum=momentum, weight_decay=weight_decay)
 
-        criterion = nn.CrossEntropyLoss(ignore_index=2)
+        criterion = nn.CrossEntropyLoss()
 
-        input_to_mlp = features
+        markers = self._markers
 
-        labels = self._markers - 1
+        mask = torch.from_numpy(markers != 0)
 
-        labels[labels < 0] = 2
+        input_to_mlp = features[mask]
 
-        labels = torch.from_numpy(labels).to(device)
+        indices = torch.randperm(input_to_mlp.size(0))
+        input_to_mlp = input_to_mlp[indices]
+
+        labels = torch.from_numpy(markers)[mask][indices] - 1
+
+        labels = labels.to(device)
         
         #learning rate adjustment
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
@@ -295,7 +301,7 @@ class LCNCreator:
             
             #scheduler.step()
             epoch_loss = running_loss
-            epoch_acc = running_corrects.double()/(input_to_mlp.size(0) * outputs.size(2) * outputs.size(3) )
+            epoch_acc = running_corrects.double()/input_to_mlp.size(0) 
 
             print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
 
@@ -379,6 +385,8 @@ class LCNCreator:
                 torch_images = torch.Tensor(_images)
                 torch_images = torch_images.permute(0, 3, 1, 2).to(self.device)
                 _images = torch_images
+
+                self.last_conv_layer_out_channels = layer.out_channels
 
             _y = layer.forward(_images)
             _images = _y
