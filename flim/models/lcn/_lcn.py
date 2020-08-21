@@ -24,6 +24,7 @@ class LIDSConvNet(nn.Sequential):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self.feature_extractor = nn.Sequential()
+        self.classifier = nn.Sequential()
         self._logger = logging.getLogger()
 
     def forward(self, x):
@@ -46,9 +47,11 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
-        for _, layer in self.feature_extractor.named_children():
-            _y = layer.forward(x)
-            x = _y
+        _y = self.feature_extractor(x)
+        
+        x = _y
+
+        _y = self.classifier.forward(x)
 
         return _y
 

@@ -4,11 +4,13 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 
 import numpy as np
 
 from ._special_conv_layer import SpecialConvLayer
 from ._lcn import LIDSConvNet
+from ._mlp import MLP
 
 from ...utils import label_connected_components
 
@@ -99,6 +101,8 @@ class LCNCreator:
         self._in_channels = images[0].shape[-1]
         self._batch_size = batch_size
 
+        self._input_shape = images[0].shape[0:2]
+
         self.last_conv_layer_out_channels = 0
 
         self.device = device
@@ -181,7 +185,7 @@ class LCNCreator:
                         new_marker.append(new)
                     # print(new_marker)
                     new_markers.append(new_marker)
-                self._markers = new_markers
+                # self._markers = new_markers
                 layer = operation(**operation_params)
                 
             elif layer_config['operation'] == "unfold":
@@ -212,7 +216,88 @@ class LCNCreator:
             
             torch.cuda.empty_cache()
 
-        self._markers = markers
+        # self._markers = markers
+
+    def build_mlp(self, class_number):
+        architecture = self._architecture['mlp']
+        first_layer_key = next(iter(architecture['layers']))
+        first_layer = architecture['layers'][first_layer_key]
+
+        if first_layer['operation'] == 'unfold':
+            in_features = first_layer['params']['kernel_size']**2 * self.last_conv_layer_out_channels
+            output_shape = self._input_shape
+        else:
+            in_features = self._input_shape * self.last_conv_layer_out_channels
+            output_shape = class_number
+
+        architecture['layers']['linear1']['params']['in_features'] = in_features
+        
+        mlp = MLP(self._architecture['mlp'], output_shape)
+        self.LCN.classifier = mlp
+
+    def train_mlp(self,
+                  epochs=30,
+                  batch_size=256,
+                  learning_rate=0.0001,
+                  weight_decay=0.001, momentum=0.9,
+                  device='cpu'):
+        mlp = self.LCN.classifier
+        torch_input = torch.from_numpy(
+            self._images).permute(0, 3, 1, 2).float().to(self.device)
+        features = self.LCN.feature_extractor(torch_input)
+        
+        
+        optimizer = optim.SGD(mlp.parameters(), lr=learning_rate,
+                      momentum=momentum, weight_decay=weight_decay)
+
+        criterion = nn.CrossEntropyLoss(ignore_index=2)
+
+        input_to_mlp = features
+
+        labels = self._markers - 1
+
+        labels[labels < 0] = 2
+
+        labels = torch.from_numpy(labels).to(device)
+        
+        #learning rate adjustment
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
+        
+        # epochs = epochs if input_to_mlp.shape[0] > 30 else 0
+        # training
+        
+        for epoch in range(0, epochs):
+            print('Epoch {}/{}'.format(epoch, epochs - 1))
+            print('-' * 20)
+            
+            running_loss = 0.0
+            running_corrects = 0.0
+
+            for i in range(0, input_to_mlp.size(0), batch_size):
+                inputs = input_to_mlp[i:i+batch_size].to(device)
+                inputs_labels = labels[i:i+batch_size].to(device)
+                optimizer.zero_grad()
+
+                outputs = mlp(inputs)
+                #print(inputs)
+                loss = criterion(outputs, inputs_labels)
+                preds = torch.max(outputs, 1)[1]
+                
+                loss.backward()
+                #clip_grad_norm_(self.mlp.parameters(), 1)
+                
+                optimizer.step()
+                
+                #print(outputs)
+                
+                running_loss += loss.item()/inputs.size(0)
+                running_corrects += torch.sum(preds == inputs_labels.data) 
+            
+            #scheduler.step()
+            epoch_loss = running_loss
+            epoch_acc = running_corrects.double()/(input_to_mlp.size(0) * outputs.size(2) * outputs.size(3) )
+
+            print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
 
     def update_model(self,
                      model,
