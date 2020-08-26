@@ -46,6 +46,8 @@ class SpecialConvLayer(nn.Module):
         Whether to use bias or not.
     stride : int
          Stride for convolution.
+    dilation : int
+         Dilaton for atrous convolution.
     out_channels : int
         The number of ouput's channels.
     number_of_kernels_per_marker: int
@@ -61,6 +63,7 @@ class SpecialConvLayer(nn.Module):
                  padding=1,
                  stride=1,
                  bias=False,
+                 dilation=1,
                  number_of_kernels_per_marker=16,
                  activation_config=None,
                  pool_config=None,
@@ -78,7 +81,9 @@ class SpecialConvLayer(nn.Module):
         padding : int, optional
             The number of zeros to add to pad, by default 1.
         stride : int, optional
-            Stride for convolution, by default 1
+            Stride for convolution, by default 1.
+        dilation : int
+            Dilaton for atrous convolution.
         bias : bool, optional
             Whether to use bias or not., by default False
         number_of_kernels_per_marker : int, optional
@@ -97,6 +102,7 @@ class SpecialConvLayer(nn.Module):
         self.kernel_size = kernel_size
         self.padding = padding
         self.stride = stride
+        self.dilation = dilation
         self.bias = bias
         self.out_channels = 0
         
@@ -137,7 +143,8 @@ class SpecialConvLayer(nn.Module):
                             kernel_size=self.kernel_size,
                             stride=self.stride,
                             bias=self.bias,
-                            padding=self.padding)
+                            padding=self.padding,
+                            dilation=self.dilation)
 
         self._conv.weight = nn.Parameter(
             torch.Tensor(np.rollaxis(kernels_weights, 3, 1)))
