@@ -1,6 +1,7 @@
 # noqa: D100
 
 import logging
+import torch
 
 import torch.nn as nn
 
@@ -77,3 +78,20 @@ class LIDSConvNet(nn.Sequential):
             layer.to(device)
 
         return self
+
+
+class ParallelModule(nn.ModuleList):
+
+    def __init__(self):
+        super(ParallelModule, self).__init__()
+
+    def forward(self, x):
+
+        outputs = []
+
+        for module in enumerate(self.children()):
+            outputs.append(module(x))
+
+        return torch.cat(outputs, 0)
+
+
