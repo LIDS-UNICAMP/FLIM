@@ -5,7 +5,7 @@ import torch
 
 import torch.nn as nn
 
-__all__ = ["LIDSConvNet"]
+__all__ = ["LIDSConvNet", "ParallelModule"]
 
 
 class LIDSConvNet(nn.Sequential):
@@ -82,10 +82,36 @@ class LIDSConvNet(nn.Sequential):
 
 class ParallelModule(nn.ModuleList):
 
+    """A module where every sub module is applied in parallel.
+
+    Each sub module is applied in parallel and the output \
+         is concatenated.
+
+    """
+  
     def __init__(self):
         super(ParallelModule, self).__init__()
 
     def forward(self, x):
+        """Apply the module to an input tensor.
+
+        Apply the module to a batch of images.\
+        Each sub module is aplied in parallel and \
+        the outputs are concatenated.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor in the shape :math:`(N, C, H, W)`.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor with shape :math:`(N, C^\prime,  H, W)`.
+            The output height and width depends on the paramenters \
+            used to define the layer.
+
+        """
 
         outputs = []
 

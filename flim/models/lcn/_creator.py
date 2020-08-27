@@ -149,6 +149,32 @@ class LCNCreator:
                       markers,
                       remove_similar_filters=False,
                       similarity_level=0.85):
+        """Builds a module.
+
+        A module can have submodules.
+
+        Parameters
+        ----------
+        module_arch : dict
+            module configuration
+        images : ndarray
+            A set of images with size :math:`(N, H, W, C)`.
+        markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label.
+        ----------
+        remove_similar_filters : bool, optional
+            Keep only one of a set of similar filters, by default False.
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+
+        Returns
+        -------
+        nn.Module
+            A PyTorch module.
+        """        
     
         device = self.device
 
