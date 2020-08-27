@@ -169,13 +169,35 @@ class LCNCreator:
             layer_config = layers_arch[key]
 
             if "type" in layer_config:
+                print('module', key)
+                print(last_conv_layer_out_channels)
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
                                              images,
                                              markers,
                                              remove_similar_filters,
                                              similarity_level)
+                if module_type == 'parallel':
+                    module.append(_module)
+                else:
+                    module.add_module(key, _module)
 
-                module.append(_module)
+                    torch_images = torch.Tensor(images)
+
+                    torch_images = torch_images.permute(0, 3, 1, 2)
+                    
+                    input_size = torch_images.size(0)
+                    
+                    outputs = torch.Tensor([])
+                    _module = _module .to(self.device)
+                    
+                    for i in range(0, input_size, batch_size):
+                        batch = torch_images[i: i+batch_size]
+                        output = _module.forward(batch.to(device))
+                        output = output.detach().cpu()
+                        outputs = torch.cat((outputs, output))
+
+                    last_conv_layer_out_channels = outputs.size(1)
+                    images = outputs.permute(0, 2, 3, 1).detach().numpy()
             
             else:
         
@@ -244,7 +266,7 @@ class LCNCreator:
                     
                     for i in range(0, input_size, batch_size):
                         batch = torch_images[i: i+batch_size]
-                        output = layer.forward(batch.to(self.device))
+                        output = layer.forward(batch.to(device))
                         output = output.detach().cpu()
                         outputs = torch.cat((outputs, output))
                         
