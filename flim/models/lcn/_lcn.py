@@ -89,7 +89,7 @@ class ParallelModule(nn.ModuleList):
 
         outputs = []
 
-        for module in enumerate(self.children()):
+        for module in self.children():
             outputs.append(module(x))
 
         return torch.cat(outputs, 0)

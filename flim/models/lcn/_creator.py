@@ -1,14 +1,16 @@
 # noqa: D100
 
 import math
+from numpy.lib.shape_base import _make_along_axis_idx
 
 import torch
 import torch.nn as nn
 
 import numpy as np
+from torch.nn.modules import module
 
 from ._special_conv_layer import SpecialConvLayer
-from ._lcn import LIDSConvNet
+from ._lcn import LIDSConvNet, ParallelModule
 
 from ...utils import label_connected_components
 
@@ -130,89 +132,128 @@ class LCNCreator:
         if self._relabel_markers:
             markers = label_connected_components(markers)
 
+        
+        module, out_channels = self._build_module(architecture,
+                                    images,
+                                    markers,
+                                    remove_similar_filters,
+                                    similarity_level)
+
+        self.last_conv_layer_out_channels = out_channels
+
+        self.LCN.feature_extractor = module
+
+    def _build_module(self,
+                      module_arch,
+                      images,
+                      markers,
+                      remove_similar_filters=False,
+                      similarity_level=0.85):
+    
+        device = self.device
+
         batch_size = self._batch_size
 
-        self.last_conv_layer_out_channels = self._in_channels
+        module_type = module_arch['type']
+
+        if module_type == 'parallel':
+            module = ParallelModule()
+        else:
+            module = nn.Sequential()
         
-        for key in architecture:
-            layer_config = architecture[key]
-            
-            _assert_params(layer_config)
-            
-            operation = __operations__[layer_config['operation']]
-            operation_params = layer_config['params']
-            
-            if layer_config['operation'] == "conv2d":
-                activation_config = None
-                pool_config = None
+        layers_arch = module_arch['layers']
 
-                if 'activation' in layer_config:
-                    activation_config = layer_config['activation']
-                if 'pool' in layer_config:
-                    pool_config = layer_config['pool']
-                
-                layer = operation(
-                    in_channels=self.last_conv_layer_out_channels,
-                    **operation_params,
-                    activation_config=activation_config,
-                    pool_config=pool_config)
+        last_conv_layer_out_channels = images.shape[-1]
 
-                layer.initialize_weights(images, markers)
+        for key in layers_arch:
+            layer_config = layers_arch[key]
 
-                if remove_similar_filters:
-                    layer.remove_similar_filters(similarity_level)
-                    
-                self.last_conv_layer_out_channels = layer.out_channels
-                
-            elif layer_config['operation'] == "batch_norm2d":
-                layer = operation(
-                    num_features=self.last_conv_layer_out_channels)
-                
-            elif layer_config['operation'] == "max_pool2d":
-                new_markers = []
-                stride = layer_config['params']['stride']
-                for marker in markers:
-                    new_marker = []
-                    # print(marker)
-                    for old in marker:
-                        x, y, label = old
-                        new = \
-                            (math.floor(x/stride), math.floor(y/stride), label)
-                        new_marker.append(new)
-                    # print(new_marker)
-                    new_markers.append(new_marker)
-                self._markers = new_markers
-                layer = operation(**operation_params)
-                
-            elif layer_config['operation'] == "unfold":
-                layer = operation(**operation_params)
-                
+            if "type" in layer_config:
+                _module, last_conv_layer_out_channels = self._build_module(layer_config,
+                                             images,
+                                             markers,
+                                             remove_similar_filters,
+                                             similarity_level)
+
+                module.append(_module)
+            
             else:
-                layer = operation(**operation_params)
+        
+                _assert_params(layer_config)
                 
-            torch_images = torch.Tensor(images)
+                operation = __operations__[layer_config['operation']]
+                operation_params = layer_config['params']
+                
+                if layer_config['operation'] == "conv2d":
+                    activation_config = None
+                    pool_config = None
 
-            torch_images = torch_images.permute(0, 3, 1, 2)
-            
-            input_size = torch_images.size(0)
-            
-            if layer_config['operation'] != "unfold":
-                outputs = torch.Tensor([])
-                layer = layer.to(self.device)
-                
-                for i in range(0, input_size, batch_size):
-                    batch = torch_images[i: i+batch_size]
-                    output = layer.forward(batch.to(self.device))
-                    output = output.detach().cpu()
-                    outputs = torch.cat((outputs, output))
+                    if 'activation' in layer_config:
+                        activation_config = layer_config['activation']
+                    if 'pool' in layer_config:
+                        pool_config = layer_config['pool']
                     
-                images = outputs.permute(0, 2, 3, 1).detach().numpy()
-    
-            self.LCN.feature_extractor.add_module(key, layer)
-            
-            torch.cuda.empty_cache()
+                    layer = operation(
+                        in_channels=last_conv_layer_out_channels,
+                        **operation_params,
+                        activation_config=activation_config,
+                        pool_config=pool_config)
 
-        self._markers = markers
+                    layer.initialize_weights(images, markers)
+
+                    if remove_similar_filters:
+                        layer.remove_similar_filters(similarity_level)
+                        
+                    last_conv_layer_out_channels = layer.out_channels
+                    
+                elif layer_config['operation'] == "batch_norm2d":
+                    layer = operation(
+                        num_features=last_conv_layer_out_channels)
+                    
+                elif layer_config['operation'] == "max_pool2d":
+                    new_markers = []
+                    stride = layer_config['params']['stride']
+                    for marker in markers:
+                        new_marker = []
+                       
+                        for old in marker:
+                            x, y, label = old
+                            new = \
+                                (math.floor(x/stride), math.floor(y/stride), label)
+                            new_marker.append(new)
+                        
+                        new_markers.append(new_marker)
+                    layer = operation(**operation_params)
+                    markers = new_marker
+                    
+                elif layer_config['operation'] == "unfold":
+                    layer = operation(**operation_params)
+                    
+                else:
+                    layer = operation(**operation_params)
+                    
+                torch_images = torch.Tensor(images)
+
+                torch_images = torch_images.permute(0, 3, 1, 2)
+                
+                input_size = torch_images.size(0)
+                
+                if layer_config['operation'] != "unfold":
+                    outputs = torch.Tensor([])
+                    layer = layer.to(self.device)
+                    
+                    for i in range(0, input_size, batch_size):
+                        batch = torch_images[i: i+batch_size]
+                        output = layer.forward(batch.to(self.device))
+                        output = output.detach().cpu()
+                        outputs = torch.cat((outputs, output))
+                        
+                    images = outputs.permute(0, 2, 3, 1).detach().numpy()
+        
+                module.add_module(key, layer)
+
+        return module, last_conv_layer_out_channels
+
 
     def update_model(self,
                      model,
