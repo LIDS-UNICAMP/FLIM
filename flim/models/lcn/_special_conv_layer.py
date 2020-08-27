@@ -303,9 +303,9 @@ class SpecialConvLayer(nn.Module):
         for image, image_markers in zip(images, markers):
             if len(image_markers) == 0:
                 continue
-            image_pad = pad(image, ((padding, padding),
+            image_pad = np.pad(image, ((padding, padding),
                                     (padding, padding), (0, 0)),
-                            mode='constant')
+                            mode='constant', constant_values=0)
             
             patches = view_as_windows(image_pad,
                                       (kernel_size, kernel_size, in_channels),
