@@ -460,13 +460,20 @@ class SpecialConvLayer(nn.Module):
         for image, image_markers in zip(images, markers):
             if len(image_markers) == 0:
                 continue
-            image_pad = np.pad(image, ((padding, padding),
-                                    (padding, padding), (0, 0)),
+            dilated_kernel_size = kernel_size + (self.dilation - 1) * (kernel_size-1)
+            dilated_padding = dilated_kernel_size // 2
+            image_pad = np.pad(image, ((dilated_padding, dilated_padding),
+                                    (dilated_padding, dilated_padding), (0, 0)),
                             mode='constant', constant_values=0)
+
             
             patches = view_as_windows(image_pad,
-                                      (kernel_size, kernel_size, in_channels),
+                                      (dilated_kernel_size, dilated_kernel_size, in_channels),
                                       step=1)
+
+            if self.dilation > 1:
+                r = np.arange(0, dilated_kernel_size, self.dilation)
+                patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
 
             shape = patches.shape
             image_shape = image.shape

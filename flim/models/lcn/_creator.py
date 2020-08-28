@@ -195,8 +195,6 @@ class LCNCreator:
             layer_config = layers_arch[key]
 
             if "type" in layer_config:
-                print('module', key)
-                print(last_conv_layer_out_channels)
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
                                              images,
                                              markers,
