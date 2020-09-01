@@ -389,6 +389,26 @@ class LCNCreator:
 
         self._markers = markers
 
+    def remove_filters(self, layer_index, filter_indices):
+        """Remove layer's filters.
+
+        Be aware that following layers must be updated.
+
+        Parameters
+        ----------
+        layer_index : int
+            Layer index.
+        filter_indices : ndarray
+            A 1D array with indices to remove.
+        """
+
+        layer = self.LCN.feature_extractor[layer_index]
+        
+        assert isinstance(layer, SpecialConvLayer),\
+            "Layer is not a Special Conv Layer"
+
+        layer.remove_filters(filter_indices)
+
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
 

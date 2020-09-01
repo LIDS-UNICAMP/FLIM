@@ -294,6 +294,43 @@ class SpecialConvLayer(nn.Module):
         self._conv.to(self.device)
 
         self._conv.weight.requires_grad = False
+
+    def remove_filters(self, filter_indices):
+        """Remove Conv2D filters.
+
+        Following layers must be updated.
+
+        Parameters
+        ----------
+        filter_indices : ndarray
+            A 1D array with indices to remove.
+        """        
+        assert filter_indices is not None, "filter indices must be provided"
+
+        current_kernels = self._conv.weight.detach()
+
+        mask = np.in1d(np.arange(current_kernels.size(0)), filter_indices)
+
+        mask = np.logical_not(mask)
+
+        selected_kernels = current_kernels[mask]
+
+        self.out_channels = selected_kernels.size(0)
+
+        self._conv = Conv2d(self.in_channels,
+                            selected_kernels.size(0),
+                            kernel_size=self.kernel_size,
+                            stride=self.stride,
+                            dilation=self.dilation,
+                            bias=self.bias,
+                            padding=self.padding)
+
+        self._conv.weight = nn.Parameter(selected_kernels)
+
+        self._conv.to(self.device)
+
+        self._conv.weight.requires_grad = False
+
       
     def to(self, device):
         """Move layer to ``device``.
