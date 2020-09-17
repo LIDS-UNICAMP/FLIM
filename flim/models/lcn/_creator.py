@@ -339,7 +339,7 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
     
         """
-        assert model is not None or not isinstance(LIDSConvNet), \
+        assert model is not None or not isinstance(model, LIDSConvNet), \
             "A LIDSConvNet model must be provided"
 
         assert images is not None and markers is not None and \
