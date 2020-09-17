@@ -51,8 +51,8 @@ class LCNCreator:
 
     def __init__(self,
                  architecture,
-                 images,
-                 markers,
+                 images=None,
+                 markers=None,
                  batch_size=32,
                  relabel_markers=True,
                  device='cpu',
@@ -64,10 +64,11 @@ class LCNCreator:
         architecture : dict
             Netwoerk's architecture specification.
         images : ndarray
-            A set of images with size :math:`(N, H, W, C)`.
+            A set of images with size :math:`(N, H, W, C)`,
+            by default None.
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
-            The label 0 denote no label.
+            The label 0 denote no label, by default None.
         batch_size : int, optional
             Batch size, by default 32.
         relabel_markers : bool, optional
@@ -81,24 +82,24 @@ class LCNCreator:
 
         """
         assert architecture is not None
-        assert images is not None
-        assert markers is not None
-
-        assert(len(images) == len(markers) and len(images) > 0)
 
         if superpixels_markers is not None:
             indices = np.where(superpixels_markers != 0)
             markers[0, indices[0], indices[1]] = \
                 superpixels_markers[indices[0], indices[1]]
 
-        markers = markers.astype(np.int)
+        if markers is not None:
+            markers = markers.astype(np.int)
 
         self._feature_extractor = nn.Sequential()
         self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
         self._architecture = architecture
-        self._in_channels = images[0].shape[-1]
+        if images is None:
+            self._in_channels = None
+        else:
+            self._in_channels = images[0].shape[-1]
         self._batch_size = batch_size
 
         self.last_conv_layer_out_channels = 0
