@@ -579,7 +579,7 @@ def _kmeans_roots(patches,
             
             roots_of_label = kmeans.cluster_centers_
         elif patches_of_label.shape[0] >= min_number_of_pacthes_per_label or \
-                possible_labels.shape[0] == 1:
+                patches.shape[0]/possible_labels.shape[0] <= min_number_of_pacthes_per_label:
             roots_of_label = patches_of_label.reshape(
                 patches_of_label.shape[0], -1)
         
