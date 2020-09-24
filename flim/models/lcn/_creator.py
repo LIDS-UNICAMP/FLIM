@@ -52,6 +52,7 @@ class LCNCreator:
                  architecture,
                  images=None,
                  markers=None,
+                 input_shape=None,
                  batch_size=32,
                  relabel_markers=True,
                  device='cpu',
@@ -68,6 +69,8 @@ class LCNCreator:
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
             The label 0 denote no label, by default None.
+        input_sahpe: tuple
+            Image shape (H, W, C), must me given if images is None. By default None.
         batch_size : int, optional
             Batch size, by default 32.
         relabel_markers : bool, optional
@@ -96,11 +99,13 @@ class LCNCreator:
         self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
+        self._input_shape = input_shape
         self._architecture = architecture
         if images is None:
             self._in_channels = None
         else:
             self._in_channels = images[0].shape[-1]
+            self._input_shape = images[0].shape[1:3]
         self._batch_size = batch_size
 
         self.last_conv_layer_out_channels = 0
@@ -148,10 +153,25 @@ class LCNCreator:
 
         self.LCN.feature_extractor = module
 
+    def load_model(self, state_dict):
+        architecture = self._architecture
+
+        module, out_channels = self._build_module(architecture['features'],
+                                                  state_dict=state_dict)
+
+        self.last_conv_layer_out_channels = out_channels
+
+        self.LCN.feature_extractor = module
+
+        self.build_classifier()
+
+        self.LCN.load_state_dict(state_dict)
+
     def _build_module(self,
                       module_arch,
-                      images,
-                      markers,
+                      images=None,
+                      markers=None,
+                      state_dict=None,
                       remove_similar_filters=False,
                       similarity_level=0.85):
         """Builds a module.
@@ -167,6 +187,9 @@ class LCNCreator:
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
             The label 0 denote no label.
+        state_dict: OrderedDict
+            If images and markers are None, this argument must be given,\
+            by default None.
         ----------
         remove_similar_filters : bool, optional
             Keep only one of a set of similar filters, by default False.
@@ -180,7 +203,6 @@ class LCNCreator:
         nn.Module
             A PyTorch module.
         """        
-    
         device = self.device
 
         batch_size = self._batch_size
@@ -194,42 +216,42 @@ class LCNCreator:
         
         layers_arch = module_arch['layers']
 
-        last_conv_layer_out_channels = images.shape[-1]
-
-        output_shape = images.shape
+        last_conv_layer_out_channels = self._input_shape[-1]
+        output_shape = self._input_shape
 
         for key in layers_arch:
             layer_config = layers_arch[key]
 
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
-                                             images,
-                                             markers,
-                                             remove_similar_filters,
-                                             similarity_level)
+                                                                           images,
+                                                                           markers,
+                                                                           state_dict,
+                                                                           remove_similar_filters,
+                                                                           similarity_level)
                 if module_type == 'parallel':
                     module.append(_module)
                 else:
                     module.add_module(key, _module)
+                    if images is not None and markers is not None:
+                        torch_images = torch.Tensor(images)
 
-                    torch_images = torch.Tensor(images)
+                        torch_images = torch_images.permute(0, 3, 1, 2)
+                        
+                        input_size = torch_images.size(0)
+                        
+                        outputs = torch.Tensor([])
+                        _module = _module .to(self.device)
+                        
+                        for i in range(0, input_size, batch_size):
+                            batch = torch_images[i: i+batch_size]
+                            output = _module.forward(batch.to(device))
+                            output = output.detach().cpu()
+                            outputs = torch.cat((outputs, output))
 
-                    torch_images = torch_images.permute(0, 3, 1, 2)
-                    
-                    input_size = torch_images.size(0)
-                    
-                    outputs = torch.Tensor([])
-                    _module = _module .to(self.device)
-                    
-                    for i in range(0, input_size, batch_size):
-                        batch = torch_images[i: i+batch_size]
-                        output = _module.forward(batch.to(device))
-                        output = output.detach().cpu()
-                        outputs = torch.cat((outputs, output))
-
-                    last_conv_layer_out_channels = outputs.size(1)
-                    images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                    output_shape = images.shape
+                        # last_conv_layer_out_channels = outputs.size(1)
+                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                        # output_shape = images.shape
             
             else:
         
@@ -252,8 +274,11 @@ class LCNCreator:
                         **operation_params,
                         activation_config=activation_config,
                         pool_config=pool_config)
-
-                    layer.initialize_weights(images, markers)
+                    if images is None or markers is None:
+                        kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
+                        layer.initialize_weights(kernels_number=kernels_number)
+                    else:
+                        layer.initialize_weights(images, markers)
 
                     if remove_similar_filters:
                         layer.remove_similar_filters(similarity_level)
@@ -265,6 +290,11 @@ class LCNCreator:
                         num_features=last_conv_layer_out_channels)
                     
                 elif layer_config['operation'] == "max_pool2d":
+                    stride = operation_params['stride']
+
+                    output_shape[0] = output_shape[0]//stride
+                    output_shape[1] = output_shape[1]//stride
+
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "unfold":
@@ -272,25 +302,26 @@ class LCNCreator:
                     
                 else:
                     layer = operation(**operation_params)
-                    
-                torch_images = torch.Tensor(images)
 
-                torch_images = torch_images.permute(0, 3, 1, 2)
-                
-                input_size = torch_images.size(0)
-                
-                if layer_config['operation'] != "unfold":
-                    outputs = torch.Tensor([])
-                    layer = layer.to(self.device)
+                if images is not None and markers is not None:    
+                    torch_images = torch.Tensor(images)
+
+                    torch_images = torch_images.permute(0, 3, 1, 2)
                     
-                    for i in range(0, input_size, batch_size):
-                        batch = torch_images[i: i+batch_size]
-                        output = layer.forward(batch.to(device))
-                        output = output.detach().cpu()
-                        outputs = torch.cat((outputs, output))
+                    input_size = torch_images.size(0)
+                    
+                    if layer_config['operation'] != "unfold":
+                        outputs = torch.Tensor([])
+                        layer = layer.to(self.device)
                         
-                    images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                    output_shape = images.shape
+                        for i in range(0, input_size, batch_size):
+                            batch = torch_images[i: i+batch_size]
+                            output = layer.forward(batch.to(device))
+                            output = output.detach().cpu()
+                            outputs = torch.cat((outputs, output))
+                            
+                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                        output_shape = images.shape
         
                 module.add_module(key, layer)
 

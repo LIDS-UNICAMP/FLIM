@@ -104,8 +104,8 @@ class SpecialConvLayer(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.bias = bias
-        self.out_channels = 0
-        
+        self.out_channels = 1
+    
         self._activation_config = activation_config
         self._pool_config = pool_config
         
@@ -115,28 +115,41 @@ class SpecialConvLayer(nn.Module):
         self._activation = None
         self._pool = None
 
-        self.register_buffer('mean_by_channel', torch.zeros(self.in_channels))
-        self.register_buffer('std_by_channel', torch.ones(self.in_channels))
+        self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
+        self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
 
         self.device = device
         
         self._logger = logging.getLogger()
         
-    def initialize_weights(self, images, markers):
+    def initialize_weights(self, images=None, markers=None, kernels_number=1):
         """Learn kernel weights from image markers.
 
-        Initialize layer with weights learned from image markers.
+        Initialize layer with weights learned from image markers,
+        or with random kernels if no image and markers are passed.
 
         Parameters
         ----------
         images : ndarray
-            Array of images with shape :math:`(N, H, W, C)`.
+            Array of images with shape :math:`(N, H, W, C)`,
+            by default None.
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
-            The label 0 denote no label.
+            The label 0 denote no label, by default None.
+        kernels_number: int
+            If no images and markers are passed, the number of kernels must \
+            must me specified. If images and markers are not None, \
+            this argument is ignored. 
 
         """
-        kernels_weights = self._calculate_weights(images, markers)
+        if images is not None and markers is not None:
+            kernels_weights = self._calculate_weights(images, markers)
+        else:
+            kernels_weights = torch.rand(kernels_number,
+                                         self.kernel_size,
+                                         self.kernel_size,
+                                         self.in_channels).numpy()
+
         self.out_channels = kernels_weights.shape[0]
 
         self._conv = Conv2d(self.in_channels,
@@ -501,7 +514,6 @@ class SpecialConvLayer(nn.Module):
                                     (dilated_padding, dilated_padding), (0, 0)),
                             mode='constant', constant_values=0)
 
-            
             patches = view_as_windows(image_pad,
                                       (dilated_kernel_size, dilated_kernel_size, in_channels),
                                       step=1)
