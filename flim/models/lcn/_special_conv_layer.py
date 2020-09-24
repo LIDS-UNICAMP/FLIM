@@ -115,9 +115,10 @@ class SpecialConvLayer(nn.Module):
         self._activation = None
         self._pool = None
 
+        self.register_buffer('mean_by_channel', torch.zeros(self.in_channels))
+        self.register_buffer('std_by_channel', torch.ones(self.in_channels))
+
         self.device = device
-        self._mean_by_channel = 0
-        self._std_by_channel = 1
         
         self._logger = logging.getLogger()
         
@@ -204,9 +205,9 @@ class SpecialConvLayer(nn.Module):
         mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
         std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
         
-        self._mean_by_channel = \
+        self.mean_by_channel = \
             torch.from_numpy(mean_by_channel).float().to(self.device)
-        self._std_by_channel = \
+        self.std_by_channel = \
             torch.from_numpy(std_by_channel).float().to(self.device)
  
         if use_all_patches:
@@ -353,8 +354,8 @@ class SpecialConvLayer(nn.Module):
         This method modifies the module in-place.
 
         """
-        self._mean_by_channel = self._mean_by_channel.to(device)
-        self._std_by_channel = self._std_by_channel.to(device)
+        self.mean_by_channel = self.mean_by_channel.to(device)
+        self.std_by_channel = self.std_by_channel.to(device)
         
         self._conv = self._conv.to(device)
 
@@ -389,12 +390,9 @@ class SpecialConvLayer(nn.Module):
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
 
-        mean = self._mean_by_channel.view(1, -1, 1, 1)
-        std = self._std_by_channel.view(1, -1, 1, 1)
-        
-        mean = mean.to(x.device)
-        std = std.to(x.device)
-        
+        mean = self.mean_by_channel.view(1, -1, 1, 1)
+        std = self.std_by_channel.view(1, -1, 1, 1)
+
         x = (x - mean)/std
         
         y = self._conv(x)
@@ -439,9 +437,9 @@ class SpecialConvLayer(nn.Module):
         mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
         std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
         
-        self._mean_by_channel = \
+        self.mean_by_channel = \
             torch.from_numpy(mean_by_channel).float().to(self.device)
-        self._std_by_channel = \
+        self.std_by_channel = \
             torch.from_numpy(std_by_channel).float().to(self.device)
         
         patches = (patches - mean_by_channel)/std_by_channel
