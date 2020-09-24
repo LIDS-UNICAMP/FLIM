@@ -1,5 +1,7 @@
 import argparse
 
+import os
+
 import torch
 from torch.nn.parallel.data_parallel import data_parallel
 import torchvision.transforms as transforms
@@ -93,8 +95,9 @@ def main():
                     args.batch_size,
                     args.learning_rate,
                     args.weight_decay,
-                    device=device,
-                    outputs_dir=args.outputs_dir)
+                    device=device)
+
+    utils.save_model(model, args.outputs_dir, args.model_filename)
 
 if __name__ == "__main__":
     main()
