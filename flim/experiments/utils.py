@@ -101,8 +101,7 @@ def train_mlp(model,
               lr=1e-3,
               weight_decay=1e-3,
               criterion=nn.CrossEntropyLoss(),
-              device='cpu',
-              outputs_dir=None):
+              device='cpu'):
 
 
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
@@ -150,3 +149,24 @@ def train_mlp(model,
         epoch_acc = running_corrects.double()/len(train_set)
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
+
+
+def save_model(model, outputs_dir, model_filename):
+    if not os.path.exists(outputs_dir):
+        os.makedirs(outputs_dir)
+    dir_to_save = os.path.join(outputs_dir, model_filename)
+
+    torch.save(model.state_dict(), dir_to_save)
+
+def load_model(model_path, architecture, input_shape):
+    state_dict = torch.load(model_path)
+
+    creator = LCNCreator(architecture,
+                         input_shape=input_shape,
+                         relabel_markers=False)
+
+    creator.load_model(state_dict)
+
+    model = creator.get_LIDSConvNet()
+
+    return model
