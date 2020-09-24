@@ -13,6 +13,9 @@ import torch.optim as optim
 import torch.nn as nn
 
 from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score
+from sklearn import svm
+
+import joblib
 
 from ..models.lcn import LCNCreator
 from ._dataset import LIDSDataset
@@ -173,6 +176,29 @@ def load_model(model_path, architecture, input_shape):
 
     return model
 
+def _calulate_metrics(true_labels, pred_labels):
+    acc = 1.0*(true_labels == pred_labels).sum()/true_labels.shape[0]
+    precision, recall, f_score, support = precision_recall_fscore_support(true_labels, pred_labels, zero_division=0)
+    precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average='weighted', zero_division=0)
+
+    print("#" * 50)
+    print('Acc: {:.6f}'.format(acc))
+    print("-" * 50)
+    print("F1-score {:.6f}".format(f1_score(true_labels, pred_labels)))
+    print("-" * 50)
+    print("Precision:", *precision)
+    print("Recall:", *recall)
+    print("F-score:", *f_score)
+    print("-" * 50)
+    print("W-Precision:", precision_w)
+    print("W-Recall:", recall_w)
+    print("W-F-score:", f_score_w)
+    print("-" * 50)
+    print("Kappa {}".format(cohen_kappa_score(true_labels, pred_labels)))
+    print("-" * 50)
+    print("Suport", *support)
+    print("#" * 50)
+
 def validate_model(model,
                    val_set,
                    criterion=nn.CrossEntropyLoss(),
@@ -211,26 +237,61 @@ def validate_model(model,
         true_labels = torch.cat((true_labels, labels.cpu()))
         pred_labels = torch.cat((pred_labels, preds.cpu()))
     
+    print('Val - loss: {:.6f}'.format(running_loss))
     print("Calculating metrics...")
+    _calulate_metrics(true_labels, pred_labels)
 
-    acc = running_corrects.double()/len(val_set)
-    precision, recall, f_score, support = precision_recall_fscore_support(true_labels, pred_labels, zero_division=0)
-    precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average='weighted', zero_division=0)
+def train_svm(model, train_set, batch_size=32, device='cpu'):
+    clf = svm.LinearSVC()
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
-    print("#" * 50)
-    print('Val - Loss: {:.6f} Acc: {:.6f}'.format(running_loss, acc))
-    print("-" * 50)
-    print("F1-score {:.6f}".format(f1_score(true_labels, pred_labels)))
-    print("-" * 50)
-    print("Precision:", *precision)
-    print("Recall:", *recall)
-    print("F-score:", *f_score)
-    print("-" * 50)
-    print("W-Precision:", precision_w)
-    print("W-Recall:", recall_w)
-    print("W-F-score:", f_score_w)
-    print("-" * 50)
-    print("Kappa {}".format(cohen_kappa_score(true_labels, pred_labels)))
-    print("-" * 50)
-    print("Suport", *support)
-    print("#" * 50)
+    model.feature_extractor.eval()
+    model.to(device)
+
+    features = torch.Tensor([])
+    y = torch.Tensor([]).long()
+    for inputs, labels in dataloader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        outputs = model.feature_extractor(inputs).detach()
+        features = torch.cat((features, outputs.cpu()))
+        y = torch.cat((y, labels.cpu()))
+    
+    print("Fitting SVM...")
+    clf.fit(features.flatten(start_dim=1), y)
+
+    return clf
+
+def save_svm(clf, outputs_dir, svm_filename):
+    if not os.path.exists(outputs_dir):
+        os.makedirs(outputs_dir)
+    dir_to_save = os.path.join(outputs_dir, svm_filename)
+    joblib.dump(clf, dir_to_save, compress=9)
+
+def load_svm(svm_path):
+    clf = joblib.load(svm_path)
+
+    return clf
+
+def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
+    dataloader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
+
+    model.feature_extractor.eval()
+    model.to(device)
+
+    true_labels = torch.Tensor([]).long()
+    pred_labels = torch.Tensor([]).long()
+
+    for i, data in enumerate(dataloader, 0):
+        inputs, labels = data
+        
+        inputs, labels = inputs.to(device), labels.to(device)
+        
+        outputs = model.feature_extractor(inputs).detach()
+        
+        preds = clf.predict(outputs.cpu().flatten(start_dim=1))
+
+        true_labels = torch.cat((true_labels, labels.cpu()))
+        pred_labels = torch.cat((pred_labels, torch.from_numpy(preds)))
+    
+    print("Calculating metrics...")
+    _calulate_metrics(true_labels, pred_labels)

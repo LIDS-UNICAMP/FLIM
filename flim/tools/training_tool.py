@@ -62,6 +62,14 @@ def get_arguments():
                         help='gpus to use',
                         nargs='*',
                         type=int)
+
+    parser.add_argument('-s', '--svm',
+                        help='Use SVM as classifier',
+                        action="store_true")
+
+    parser.add_argument("-smn", "--svm-filename",
+                        help="SVM filename. Ex. svm.joblib.",
+                        required=False)
     
     args = parser.parse_args()
     
@@ -89,13 +97,20 @@ def main():
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
 
-    utils.train_mlp(model,
-                    dataset,
-                    args.epochs,
-                    args.batch_size,
-                    args.learning_rate,
-                    args.weight_decay,
-                    device=device)
+    if args.svm:
+        svm = utils.train_svm(model,
+                              dataset,
+                              args.batch_size,
+                              device)
+        utils.save_svm(svm, args.outputs_dir, args.svm_filename)
+    else:
+        utils.train_mlp(model,
+                        dataset,
+                        args.epochs,
+                        args.batch_size,
+                        args.learning_rate,
+                        args.weight_decay,
+                        device=device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
     

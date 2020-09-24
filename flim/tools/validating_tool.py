@@ -24,13 +24,21 @@ def get_arguments():
                         required=True)
     
     parser.add_argument("-mp", "--model-path",
-                        help="Model filename",
+                        help="Saved model path.",
                         required=True)
     
     parser.add_argument('-g', '--gpus',
                         help='gpus to use',
                         nargs='*',
                         type=int)
+
+    parser.add_argument('-s', '--svm',
+                        help='Use SVM as classifier',
+                        action="store_true")
+
+    parser.add_argument("-smp", "--svm-path",
+                        help="Saved SVM path. Ex. svm.joblib.",
+                        required=False)
     
     args = parser.parse_args()
     
@@ -59,7 +67,11 @@ def main():
 
     model = utils.load_model(args.model_path, architecture, input_shape)
 
-    utils.validate_model(model, dataset)
+    if args.svm:
+        clf = utils.load_svm(args.svm_path)
+        utils.validate_svm(model, clf, dataset, device=device)
+    else:
+        utils.validate_model(model, dataset)
 
 if __name__ == "__main__":
     main()

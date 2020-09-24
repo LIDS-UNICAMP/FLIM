@@ -105,7 +105,8 @@ class LCNCreator:
             self._in_channels = input_shape[-1]
         else:
             self._in_channels = images[0].shape[-1]
-            self._input_shape = images[0].shape[1:3]
+            self._input_shape = list(images[0].shape)
+
         self._batch_size = batch_size
 
         self.last_conv_layer_out_channels = 0
@@ -326,11 +327,12 @@ class LCNCreator:
                             outputs = torch.cat((outputs, output))
                             
                         images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                        output_shape = images.shape
+                        # output_shape = list(images.shape)
         
                 module.add_module(key, layer)
         output_shape[2] = last_conv_layer_out_channels
         self._output_shape = output_shape
+       
         return module, last_conv_layer_out_channels
     
     def build_classifier(self):
