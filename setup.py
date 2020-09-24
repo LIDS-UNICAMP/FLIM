@@ -29,6 +29,7 @@ setuptools.setup(
     ],
     install_requires=[
         "torch",
+        "torchvision"
         "numpy",
         "scikit-image",
         "sklearn",
