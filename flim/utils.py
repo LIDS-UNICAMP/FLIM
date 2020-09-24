@@ -10,7 +10,7 @@ from scipy.ndimage import label
 __all__ = ['label_connected_components']
 
 
-def label_connected_components(label_image):
+def label_connected_components(label_image, start_label=1):
     """Label connected components in a label image.
 
     Create a new label image where labels are changed so that each \
@@ -22,6 +22,9 @@ def label_connected_components(label_image):
     label_image : ndarray
         Label image with size :math:`(H, W)`.
 
+    start_labeel: int
+        First label, by default 1.
+
     Returns
     -------
     ndarray
@@ -32,10 +35,10 @@ def label_connected_components(label_image):
 
     num_labels = label_image.astype(np.int32).max()
 
-    new_label_image = np.zeros_like(label_image)
+    new_label_image = np.zeros_like(label_image).astype(np.int)
     structure = np.ones((3, 3), dtype=np.uint8)
 
-    _c = 1
+    _c = start_label
 
     for _l in range(1, num_labels + 1):
         _label_image = label(label_image == _l, structure=structure)[0]

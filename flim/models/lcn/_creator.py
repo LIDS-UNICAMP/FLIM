@@ -1,7 +1,6 @@
 # noqa: D100
 
 import math
-from numpy.lib.shape_base import _make_along_axis_idx
 
 import torch
 import torch.nn as nn
@@ -51,8 +50,8 @@ class LCNCreator:
 
     def __init__(self,
                  architecture,
-                 images,
-                 markers,
+                 images=None,
+                 markers=None,
                  batch_size=32,
                  relabel_markers=True,
                  device='cpu',
@@ -64,10 +63,11 @@ class LCNCreator:
         architecture : dict
             Netwoerk's architecture specification.
         images : ndarray
-            A set of images with size :math:`(N, H, W, C)`.
+            A set of images with size :math:`(N, H, W, C)`,
+            by default None.
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
-            The label 0 denote no label.
+            The label 0 denote no label, by default None.
         batch_size : int, optional
             Batch size, by default 32.
         relabel_markers : bool, optional
@@ -81,24 +81,26 @@ class LCNCreator:
 
         """
         assert architecture is not None
-        assert images is not None
-        assert markers is not None
-
-        assert(len(images) == len(markers) and len(images) > 0)
 
         if superpixels_markers is not None:
-            indices = np.where(superpixels_markers != 0)
-            markers[0, indices[0], indices[1]] = \
-                superpixels_markers[indices[0], indices[1]]
+            self._superpixel_markers = np.expand_dims(superpixels_markers, 0).astype(np.int)
+            self._has_superpixel_markers = True
 
-        markers = markers.astype(np.int)
+        else:
+           self._has_superpixel_markers = False 
+
+        if markers is not None:
+            markers = markers.astype(np.int)
 
         self._feature_extractor = nn.Sequential()
         self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
         self._architecture = architecture
-        self._in_channels = images[0].shape[-1]
+        if images is None:
+            self._in_channels = None
+        else:
+            self._in_channels = images[0].shape[-1]
         self._batch_size = batch_size
 
         self.last_conv_layer_out_channels = 0
@@ -130,9 +132,12 @@ class LCNCreator:
         markers = self._markers
         
         if self._relabel_markers:
-            markers = label_connected_components(markers)
+            start_label = 2 if self._has_superpixel_markers else 1
+            markers = label_connected_components(markers, start_label)
 
-        
+        if self._has_superpixel_markers:
+            markers += self._superpixel_markers
+
         module, out_channels = self._build_module(architecture,
                                     images,
                                     markers,
@@ -339,7 +344,7 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
     
         """
-        assert model is not None or not isinstance(LIDSConvNet), \
+        assert model is not None or not isinstance(model, LIDSConvNet), \
             "A LIDSConvNet model must be provided"
 
         assert images is not None and markers is not None and \
@@ -364,8 +369,13 @@ class LCNCreator:
         mask = np.logical_and(markers != 0, old_markers != 0)
         new_markers[mask] = 0
 
-        old_markers_relabeled = label_connected_components(old_markers)
-        new_makers_relabeled = label_connected_components(new_markers)
+        start_label = 2 if self._has_superpixel_markers else 1
+
+        old_markers_relabeled = label_connected_components(old_markers, start_label)
+        if self._has_superpixel_markers:
+            old_markers_relabeled += self._superpixel_markers
+
+        new_makers_relabeled = label_connected_components(new_markers, start_label)
 
         for _, layer in model.feature_extractor.named_children():
             if isinstance(layer, SpecialConvLayer):
