@@ -19,12 +19,16 @@ class LIDSConvNet(nn.Sequential):
     feature_extractor : nn.Torch.Module
         A feature extractor formed by convolutional layers.
 
+    classifier : nn.Torch.Module
+        A classifier.
+
     """
 
     def __init__(self):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self.feature_extractor = nn.Sequential()
+        self.classifier = nn.Sequential()
         self._logger = logging.getLogger()
 
     def forward(self, x):

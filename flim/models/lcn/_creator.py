@@ -262,20 +262,7 @@ class LCNCreator:
                         num_features=last_conv_layer_out_channels)
                     
                 elif layer_config['operation'] == "max_pool2d":
-                    new_markers = []
-                    stride = layer_config['params']['stride']
-                    for marker in markers:
-                        new_marker = []
-                       
-                        for old in marker:
-                            x, y, label = old
-                            new = \
-                                (math.floor(x/stride), math.floor(y/stride), label)
-                            new_marker.append(new)
-                        
-                        new_markers.append(new_marker)
                     layer = operation(**operation_params)
-                    markers = new_marker
                     
                 elif layer_config['operation'] == "unfold":
                     layer = operation(**operation_params)
@@ -304,6 +291,46 @@ class LCNCreator:
                 module.add_module(key, layer)
 
         return module, last_conv_layer_out_channels
+    
+    def build_classifier(self):
+        """Buid the classifier."""
+
+        model = self.LCN
+
+        if model is None:
+            model = LIDSConvNet()
+            self.LCN = model
+
+        classifier = model.classifier
+        
+        architecture = self._architecture
+
+        assert "classifier" in architecture, \
+            "Achitecture does not specify a classifier"
+
+        cls_architecture = architecture['classifier']['layers']
+        
+        images_shape = self._images[0].shape[1:3]
+
+        for key in cls_architecture:
+            layer_config = cls_architecture[key]
+            
+            operation = __operations__[layer_config['operation']]
+            operation_params = layer_config['params']
+            
+            if layer_config['operation'] == 'linear':
+                if operation_params['in_features'] == -1:
+                    operation_params['in_features'] = self.last_conv_layer_out_channels * np.prod(images_shape)
+
+            layer = operation(**operation_params)
+            
+            classifier.add_module(key, layer)
+            
+        #initialization
+        for m in classifier.modules():
+            if isinstance(m, nn.Linear):
+                #nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)   
 
 
     def update_model(self,
