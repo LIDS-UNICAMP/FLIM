@@ -568,7 +568,7 @@ def _kmeans_roots(patches,
     min_number_of_pacthes_per_label = n_clusters_per_label
 
     possible_labels = np.unique(labels)
-
+    
     for label in possible_labels:
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
@@ -579,7 +579,7 @@ def _kmeans_roots(patches,
             
             roots_of_label = kmeans.cluster_centers_
         elif patches_of_label.shape[0] >= min_number_of_pacthes_per_label or \
-                possible_labels.shape[0] == 1:
+             roots is None:
             roots_of_label = patches_of_label.reshape(
                 patches_of_label.shape[0], -1)
         
