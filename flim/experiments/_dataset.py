@@ -23,7 +23,6 @@ class LIDSDataset(Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.root_dir, self.images_names[idx])
-        
         image = rgb2lab(io.imread(image_path))
         image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
         
@@ -46,7 +45,7 @@ class LIDSDataset(Dataset):
         return label
     
     def _list_images_files(self):
-        with open(os.path.join(self.split_dir,  'files.txt'), 'r') as f:
+        with open(self.split_dir, 'r') as f:
             filenames = f.read()
         
         return [filename for filename in filenames.split('\n') if len(filename) > 0]

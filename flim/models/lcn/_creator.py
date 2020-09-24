@@ -196,6 +196,8 @@ class LCNCreator:
 
         last_conv_layer_out_channels = images.shape[-1]
 
+        output_shape = images.shape
+
         for key in layers_arch:
             layer_config = layers_arch[key]
 
@@ -227,6 +229,7 @@ class LCNCreator:
 
                     last_conv_layer_out_channels = outputs.size(1)
                     images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                    output_shape = images.shape
             
             else:
         
@@ -287,9 +290,11 @@ class LCNCreator:
                         outputs = torch.cat((outputs, output))
                         
                     images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                    output_shape = images.shape
         
                 module.add_module(key, layer)
 
+        self._output_shape = output_shape[1:]
         return module, last_conv_layer_out_channels
     
     def build_classifier(self):
@@ -309,8 +314,6 @@ class LCNCreator:
             "Achitecture does not specify a classifier"
 
         cls_architecture = architecture['classifier']['layers']
-        
-        images_shape = self._images[0].shape[1:3]
 
         for key in cls_architecture:
             layer_config = cls_architecture[key]
@@ -320,7 +323,7 @@ class LCNCreator:
             
             if layer_config['operation'] == 'linear':
                 if operation_params['in_features'] == -1:
-                    operation_params['in_features'] = self.last_conv_layer_out_channels * np.prod(images_shape)
+                    operation_params['in_features'] = np.prod(self._output_shape)
 
             layer = operation(**operation_params)
             

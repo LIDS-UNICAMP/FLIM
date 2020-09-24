@@ -7,7 +7,13 @@ from skimage.color import rgb2lab
 
 import numpy as np
 
+import torch
+from torch.utils.data import DataLoader
+import torch.optim as optim
+import torch.nn as nn
+
 from ..models.lcn import LCNCreator
+from ._dataset import LIDSDataset
 
 def load_image(image_dir):
     image = rgb2lab(io.imread(image_dir))
@@ -66,6 +72,11 @@ def load_architecture(architecture_dir):
 
     return architecture
 
+def configure_dataset(dataset_dir, split_dir, transform=None):
+    dataset = LIDSDataset(dataset_dir, split_dir, transform)
+
+    return dataset
+
 def build_model(architecture, images, markers, batch_size=32, device='cpu'):
     creator = LCNCreator(architecture,
                          images=images,
@@ -81,3 +92,61 @@ def build_model(architecture, images, markers, batch_size=32, device='cpu'):
     model = creator.get_LIDSConvNet()
 
     return model
+
+
+def train_mlp(model,
+              train_set,
+              epochs=30,
+              batch_size=64,
+              lr=1e-3,
+              weight_decay=1e-3,
+              criterion=nn.CrossEntropyLoss(),
+              device='cpu',
+              outputs_dir=None):
+
+
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+
+    model.to(device)
+    model.feature_extractor.eval()
+    model.classifier.train()
+
+    #optimizer
+    optimizer = optim.Adam(model.classifier.parameters(),
+                           lr=lr,
+                           weight_decay=weight_decay)
+  
+    #training
+    print(f"Training classifier for {epochs} epochs")
+    for epoch in range(0, epochs):
+        print('-' * 40)
+        print('Epoch {}/{}'.format(epoch, epochs - 1))
+        
+        running_loss = 0.0
+        running_corrects = 0.0
+
+        for i, data in enumerate(dataloader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            
+            loss = criterion(outputs, labels)
+            preds = torch.max(outputs, 1)[1]
+            
+            loss.backward()
+            #clip_grad_norm_(self.mlp.parameters(), 1)
+            
+            optimizer.step()
+            
+            #print(outputs)
+            
+            running_loss += loss.item()*inputs.size(0)/len(train_set)
+            running_corrects += torch.sum(preds == labels.data) 
+        
+        #scheduler.step()
+        epoch_loss = running_loss
+        epoch_acc = running_corrects.double()/len(train_set)
+
+        print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))

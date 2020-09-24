@@ -55,6 +55,10 @@ class LIDSConvNet(nn.Sequential):
             _y = layer.forward(x)
             x = _y
 
+        x = x.flatten(1)
+        
+        _y = self.classifier(x)
+
         return _y
 
     def to(self, device):
@@ -79,6 +83,9 @@ class LIDSConvNet(nn.Sequential):
 
         """
         for _, layer in self.feature_extractor.named_children():
+            layer.to(device)
+        
+        for _, layer in self.classifier.named_children():
             layer.to(device)
 
         return self

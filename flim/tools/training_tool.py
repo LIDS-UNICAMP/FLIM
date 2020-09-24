@@ -1,7 +1,8 @@
 import argparse
 
 import torch
-from torch._C import device
+from torch.nn.parallel.data_parallel import data_parallel
+import torchvision.transforms as transforms
 
 from ..experiments import utils
 
@@ -39,6 +40,21 @@ def get_arguments():
                         help="number of epochs for training",
                         type=int,
                         default=15)
+
+    parser.add_argument('-bs', '--batch-size',
+                        help="Batch size used for training",
+                        type=int,
+                        default=4)
+
+    parser.add_argument('-lr', '--learning-rate',
+                        help="Learning rate for optimizer",
+                        type=float,
+                        default=10e-3)
+
+    parser.add_argument('-wd', '--weight-decay',
+                        help="Weight decay",
+                        default=10e-3,
+                        type=float)
     
     parser.add_argument('-g', '--gpus',
                         help='gpus to use',
@@ -65,11 +81,20 @@ def main():
     architecture = utils.load_architecture(args.architecture_dir)
     images, markers = utils.load_images_and_markers(args.markers_dir)
 
-    print(images.shape)
-
     device = get_device(args.gpus)
 
     model = utils.build_model(architecture, images, markers, device=device)
+    transform = transforms.Compose([transforms.ToTensor()])
+    dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
+
+    utils.train_mlp(model,
+                    dataset,
+                    args.epochs,
+                    args.batch_size,
+                    args.learning_rate,
+                    args.weight_decay,
+                    device=device,
+                    outputs_dir=args.outputs_dir)
 
 if __name__ == "__main__":
     main()
