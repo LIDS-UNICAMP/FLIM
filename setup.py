@@ -34,5 +34,6 @@ setuptools.setup(
         "sklearn",
         "setuptools"
     ],
-    python_requires='>=3.6'
+    python_requires='>=3.7',
+    entry_points={'console_scripts': ['train=flim.tools.training_tool:main']}
 )
