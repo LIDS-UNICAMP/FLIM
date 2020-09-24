@@ -98,6 +98,7 @@ def main():
                     device=device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
+    
 
 if __name__ == "__main__":
     main()

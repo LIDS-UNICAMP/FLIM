@@ -69,7 +69,7 @@ class LCNCreator:
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
             The label 0 denote no label, by default None.
-        input_sahpe: tuple
+        input_shape: list
             Image shape (H, W, C), must me given if images is None. By default None.
         batch_size : int, optional
             Batch size, by default 32.
@@ -102,7 +102,7 @@ class LCNCreator:
         self._input_shape = input_shape
         self._architecture = architecture
         if images is None:
-            self._in_channels = None
+            self._in_channels = input_shape[-1]
         else:
             self._in_channels = images[0].shape[-1]
             self._input_shape = images[0].shape[1:3]
@@ -268,6 +268,11 @@ class LCNCreator:
                         activation_config = layer_config['activation']
                     if 'pool' in layer_config:
                         pool_config = layer_config['pool']
+
+                        stride = pool_config['params']['stride']
+
+                        output_shape[0] = output_shape[0]//stride
+                        output_shape[1] = output_shape[1]//stride
                     
                     layer = operation(
                         in_channels=last_conv_layer_out_channels,
@@ -294,7 +299,7 @@ class LCNCreator:
 
                     output_shape[0] = output_shape[0]//stride
                     output_shape[1] = output_shape[1]//stride
-
+                    
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "unfold":
@@ -324,8 +329,8 @@ class LCNCreator:
                         output_shape = images.shape
         
                 module.add_module(key, layer)
-
-        self._output_shape = output_shape[1:]
+        output_shape[2] = last_conv_layer_out_channels
+        self._output_shape = output_shape
         return module, last_conv_layer_out_channels
     
     def build_classifier(self):

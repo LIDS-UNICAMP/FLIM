@@ -12,6 +12,8 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
 
+from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score
+
 from ..models.lcn import LCNCreator
 from ._dataset import LIDSDataset
 
@@ -170,3 +172,65 @@ def load_model(model_path, architecture, input_shape):
     model = creator.get_LIDSConvNet()
 
     return model
+
+def validate_model(model,
+                   val_set,
+                   criterion=nn.CrossEntropyLoss(),
+                   batch_size=32,
+                   device='cpu'):
+
+    dataloader = DataLoader(val_set,
+                            batch_size=batch_size,
+                            shuffle=True)
+
+    model.eval()
+    model.to(device)
+
+    running_loss = 0.0
+    running_corrects = 0.0
+    
+    true_labels = torch.Tensor([]).long()
+    pred_labels = torch.Tensor([]).long()
+
+    print("Validating...")
+
+    for i, data in enumerate(dataloader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        with torch.set_grad_enabled(False):
+            outputs = model(inputs)
+            
+            loss = criterion(outputs, labels)
+            preds = torch.max(outputs, 1)[1]
+            
+
+        running_loss += loss.item()*inputs.size(0)/len(val_set)
+        running_corrects += torch.sum(preds == labels.data)
+        
+        true_labels = torch.cat((true_labels, labels.cpu()))
+        pred_labels = torch.cat((pred_labels, preds.cpu()))
+    
+    print("Calculating metrics...")
+
+    acc = running_corrects.double()/len(val_set)
+    precision, recall, f_score, support = precision_recall_fscore_support(true_labels, pred_labels, zero_division=0)
+    precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average='weighted', zero_division=0)
+
+    print("#" * 50)
+    print('Val - Loss: {:.6f} Acc: {:.6f}'.format(running_loss, acc))
+    print("-" * 50)
+    print("F1-score {:.6f}".format(f1_score(true_labels, pred_labels)))
+    print("-" * 50)
+    print("Precision:", *precision)
+    print("Recall:", *recall)
+    print("F-score:", *f_score)
+    print("-" * 50)
+    print("W-Precision:", precision_w)
+    print("W-Recall:", recall_w)
+    print("W-F-score:", f_score_w)
+    print("-" * 50)
+    print("Kappa {}".format(cohen_kappa_score(true_labels, pred_labels)))
+    print("-" * 50)
+    print("Suport", *support)
+    print("#" * 50)

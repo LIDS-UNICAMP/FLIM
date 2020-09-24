@@ -29,12 +29,14 @@ setuptools.setup(
     ],
     install_requires=[
         "torch",
-        "torchvision"
+        "torchvision",
         "numpy",
         "scikit-image",
         "sklearn",
         "setuptools"
     ],
     python_requires='>=3.7',
-    entry_points={'console_scripts': ['train=flim.tools.training_tool:main']}
+    entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
+                                      'validate=flim.tools.validating_tool:main'
+                                     ]}
 )
