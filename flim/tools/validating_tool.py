@@ -15,7 +15,7 @@ def get_arguments():
                         help="Dataset to train the mlp.",
                         required=True)
 
-    parser.add_argument('-ts', '--val-split',
+    parser.add_argument('-vs', '--val-split',
                         help="Split to train the mlp.",
                         required=True)
 
