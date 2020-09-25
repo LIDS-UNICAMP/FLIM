@@ -90,11 +90,16 @@ def build_model(architecture, images, markers, batch_size=32, device='cpu'):
                          relabel_markers=False,
                          device=device)
 
+    print("Building feature extractor...")
     creator.build_feature_extractor()
 
-    creator.build_classifier()
+    if "classifier" in architecture:
+        print("Building classifier...")
+        creator.build_classifier()
 
     model = creator.get_LIDSConvNet()
+
+    print("Model ready.")
 
     return model
 
@@ -161,6 +166,7 @@ def save_model(model, outputs_dir, model_filename):
         os.makedirs(outputs_dir)
     dir_to_save = os.path.join(outputs_dir, model_filename)
 
+    print("Saving model...")
     torch.save(model.state_dict(), dir_to_save)
 
 def load_model(model_path, architecture, input_shape):
@@ -169,7 +175,7 @@ def load_model(model_path, architecture, input_shape):
     creator = LCNCreator(architecture,
                          input_shape=input_shape,
                          relabel_markers=False)
-
+    print("Loading model...")
     creator.load_model(state_dict)
 
     model = creator.get_LIDSConvNet()
@@ -265,9 +271,11 @@ def save_svm(clf, outputs_dir, svm_filename):
     if not os.path.exists(outputs_dir):
         os.makedirs(outputs_dir)
     dir_to_save = os.path.join(outputs_dir, svm_filename)
+    print("Saving SVM...")
     joblib.dump(clf, dir_to_save, compress=9)
 
 def load_svm(svm_path):
+    print("Loading SVM...")
     clf = joblib.load(svm_path)
 
     return clf

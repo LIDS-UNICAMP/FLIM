@@ -70,8 +70,10 @@ def main():
     if args.svm:
         clf = utils.load_svm(args.svm_path)
         utils.validate_svm(model, clf, dataset, device=device)
-    else:
+    elif "classifier" in architecture:
         utils.validate_model(model, dataset)
+    else:
+        print("No classifier to evaluate...")
 
 if __name__ == "__main__":
     main()

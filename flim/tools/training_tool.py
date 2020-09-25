@@ -103,7 +103,8 @@ def main():
                               args.batch_size,
                               device)
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
-    else:
+        
+    elif "classifier" in architecture:
         utils.train_mlp(model,
                         dataset,
                         args.epochs,

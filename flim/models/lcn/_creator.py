@@ -164,7 +164,8 @@ class LCNCreator:
 
         self.LCN.feature_extractor = module
 
-        self.build_classifier()
+        if "classifier" in architecture:
+            self.build_classifier()
 
         self.LCN.load_state_dict(state_dict)
 
