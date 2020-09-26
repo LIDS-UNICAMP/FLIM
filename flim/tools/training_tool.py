@@ -93,9 +93,13 @@ def main():
 
     device = get_device(args.gpus)
 
-    model = utils.build_model(architecture, images, markers, device=device)
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
+    model = utils.build_model(architecture,
+                              images,
+                              markers,
+                              train_set=dataset,
+                              device=device)
 
     if args.svm:
         svm = utils.train_svm(model,

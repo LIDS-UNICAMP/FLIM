@@ -84,7 +84,12 @@ def configure_dataset(dataset_dir, split_dir, transform=None):
 
     return dataset
 
-def build_model(architecture, images, markers, batch_size=32, device='cpu'):
+def build_model(architecture,
+                images,
+                markers,
+                batch_size=32,
+                train_set=None,
+                device='cpu'):
     creator = LCNCreator(architecture,
                          images=images,
                          markers=markers,
@@ -97,7 +102,7 @@ def build_model(architecture, images, markers, batch_size=32, device='cpu'):
 
     if "classifier" in architecture:
         print("Building classifier...")
-        creator.build_classifier()
+        creator.build_classifier(train_set)
 
     model = creator.get_LIDSConvNet()
 
@@ -250,17 +255,17 @@ def validate_model(model,
     _calulate_metrics(true_labels, pred_labels)
 
 def train_svm(model, train_set, batch_size=32, device='cpu'):
-    clf = svm.LinearSVC()
+    clf = svm.LinearSVC(max_iter=50000)
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
-    model.feature_extractor.eval()
+    model.eval()
     model.to(device)
 
     features = torch.Tensor([])
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model.feature_extractor(inputs).detach()
+        outputs = model(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
@@ -285,7 +290,7 @@ def load_svm(svm_path):
 def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
     dataloader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
 
-    model.feature_extractor.eval()
+    model.eval()
     model.to(device)
 
     true_labels = torch.Tensor([]).long()
@@ -296,7 +301,7 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         
         inputs, labels = inputs.to(device), labels.to(device)
         
-        outputs = model.feature_extractor(inputs).detach()
+        outputs = model(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 

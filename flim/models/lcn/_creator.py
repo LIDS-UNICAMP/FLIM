@@ -4,11 +4,13 @@ import math
 
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 
 import numpy as np
 from torch.nn.modules import module
 
 from ._special_conv_layer import SpecialConvLayer
+from._special_linear_layer import SpecialLinearLayer
 from ._lcn import LIDSConvNet, ParallelModule
 
 from ...utils import label_connected_components
@@ -19,7 +21,7 @@ __operations__ = {
     "max_pool2d": nn.MaxPool2d,
     "conv2d": SpecialConvLayer,
     "relu": nn.ReLU,
-    "linear": nn.Linear,
+    "linear": SpecialLinearLayer,
     "batch_norm2d": nn.BatchNorm2d,
     "dropout": nn.Dropout,
     "adap_avg_pool2d": nn.AdaptiveAvgPool2d,
@@ -165,7 +167,7 @@ class LCNCreator:
         self.LCN.feature_extractor = module
 
         if "classifier" in architecture:
-            self.build_classifier()
+            self.build_classifier(state_dict=state_dict)
 
         self.LCN.load_state_dict(state_dict)
 
@@ -336,7 +338,7 @@ class LCNCreator:
        
         return module, last_conv_layer_out_channels
     
-    def build_classifier(self):
+    def build_classifier(self, train_set=None, state_dict=None):
         """Buid the classifier."""
 
         model = self.LCN
@@ -348,6 +350,26 @@ class LCNCreator:
         classifier = model.classifier
         
         architecture = self._architecture
+
+        features = None
+        all_labels = None
+        if train_set is not None:
+            loader = DataLoader(train_set, self._batch_size, shuffle=False)
+            for inputs, labels in loader:
+                inputs = inputs.to(self.device)
+
+                outputs = model.feature_extractor(inputs).detach().cpu().flatten(1)
+
+                if features is None:
+                    features = outputs
+                    all_labels = labels
+                else:
+                    features = torch.cat((features, outputs))
+                    all_labels = torch.cat((all_labels, labels))
+        
+            features = features.numpy()
+            all_labels.numpy()
+
 
         assert "classifier" in architecture, \
             "Achitecture does not specify a classifier"
@@ -364,15 +386,42 @@ class LCNCreator:
                 if operation_params['in_features'] == -1:
                     operation_params['in_features'] = np.prod(self._output_shape)
 
-            layer = operation(**operation_params)
-            
+                if train_set is None and state_dict is not None:
+                    weights = state_dict[f'classifier.{key}._linear.weight']
+                    operation_params['in_features'] = weights.shape[1]
+                    operation_params['out_features'] = weights.shape[0]
+
+                layer = operation(**operation_params)
+
+                layer.initialize_weights(features, all_labels)
+            else:
+                layer = operation(**operation_params)
+
+            if features is not None:
+                torch_features = torch.Tensor(features)
+                
+                input_size = torch_features.size(0)
+                
+                outputs = torch.Tensor([])
+                _module = layer.to(self.device)
+                
+                for i in range(0, input_size, self._batch_size):
+                    batch = torch_features[i: i+self._batch_size]
+                    output = _module.forward(batch.to(self.device))
+                    output = output.detach().cpu()
+                    outputs = torch.cat((outputs, output))
+                
+                features = outputs.numpy()
+
             classifier.add_module(key, layer)
             
         #initialization
-        for m in classifier.modules():
-            if isinstance(m, nn.Linear):
-                #nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)   
+        if features is None:
+            for m in classifier.modules():
+                if isinstance(m, SpecialLinearLayer):
+                    #nn.init.normal_(m.weight, 0, 0.01)
+                    if m._linear.bias is not None:
+                        nn.init.constant_(m._linear.bias, 0)   
 
 
     def update_model(self,
