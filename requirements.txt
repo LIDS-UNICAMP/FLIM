@@ -11,3 +11,4 @@ mccabe
 pydocstyle
 flake8
 pylama
+termcolor 

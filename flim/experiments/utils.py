@@ -17,6 +17,8 @@ from sklearn import svm
 
 import joblib
 
+from termcolor import colored
+
 from ..models.lcn import LCNCreator
 from ._dataset import LIDSDataset
 
@@ -188,9 +190,9 @@ def _calulate_metrics(true_labels, pred_labels):
     precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average='weighted', zero_division=0)
 
     print("#" * 50)
-    print('Acc: {:.6f}'.format(acc))
+    print(colored("Acc", "yellow"),f': {colored(f"{acc:.6f}", "blue", attrs=["bold"])}')
     print("-" * 50)
-    print("F1-score {:.6f}".format(f1_score(true_labels, pred_labels)))
+    print(colored("F1-score", "yellow"), f': {colored(f"{f1_score(true_labels, pred_labels):.6f}", "blue", attrs=["bold"])}')
     print("-" * 50)
     print("Precision:", *precision)
     print("Recall:", *recall)

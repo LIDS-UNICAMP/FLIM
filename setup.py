@@ -33,7 +33,8 @@ setuptools.setup(
         "numpy",
         "scikit-image",
         "sklearn",
-        "setuptools"
+        "setuptools",
+        "termcolor"
     ],
     python_requires='>=3.7',
     entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
