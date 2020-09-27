@@ -18,6 +18,7 @@ import torch.nn as nn
 from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score
 from sklearn import svm
 from sklearn.cluster import MiniBatchKMeans
+from sklearn.model_selection import train_test_split
 
 from scipy.spatial.distance import cdist
 
@@ -389,4 +390,51 @@ def select_images_to_put_markers(dataset, class_proportion=0.05):
 
 
     return roots.reshape(-1, *input_shape), images_names
+
+def _label_of_image(image_name):
+    if not isinstance(image_name, str):
+        raise TypeError("Parameter image_name must be a string.")
+    i = image_name.index("_")
+    label = int(image_name[0:i]) - 1
+    
+    return label
+
+def split_dataset(dataset_dir, train_size, val_size=0, test_size=None, stratify=True):
+    if os.path.exists(os.path.join(dataset_dir,  'files.txt')):
+        with open(os.path.join(dataset_dir,  'files.txt'), 'r') as f:
+            filenames = f.read().split('\n')
+        filenames = [filename for filename in filenames if len(filename) > 0]
+    else:
+        filenames = os.listdir(dataset_dir)
+        filenames.sort()
+    labels = np.array([_label_of_image(filename) for filename in filenames])
+
+    if train_size > 1:
+        train_size = int(train_size)
+
+    train_split, test_split, _, test_labels = train_test_split(filenames,
+                                                     labels,
+                                                     train_size=train_size,
+                                                     test_size=test_size,
+                                                     stratify=labels)
+
+    val_size = 0 if val_size is None else val_size
+
+    val_split = []
+
+    if val_size > 0:
+        test_size = len(test_split) - val_size
+
+        test_size = int(test_size) if test_size > 0 else test_size
+
+        val_split, test_split = train_test_split(test_split,
+                                                test_size=test_size,
+                                                stratify=test_labels)
+
+    return train_split, val_split, test_split
+
+
+    
+
+    
 

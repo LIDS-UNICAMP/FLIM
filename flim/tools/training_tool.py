@@ -76,6 +76,27 @@ def _handle_select(args):
                                  args.markers_dir,
                                  args.class_proportion)
 
+def _handle_split(args):
+    print("Splitting dataset...")
+    train_split, val_split, test_split = utils.split_dataset(args.dataset_dir,
+                                                             args.train_size,
+                                                             args.val_size,
+                                                             args.test_size)
+    with open(f"{args.split_name}-train.txt", 'w') as f:
+        for filename in train_split:
+            f.write(filename)
+            f.write('\n')
+    
+    with open(f"{args.split_name}-val.txt", 'w') as f:
+        for filename in val_split:
+            f.write(filename)
+            f.write('\n')
+            
+    with open(f"{args.split_name}-test.txt", 'w') as f:
+        for filename in test_split:
+            f.write(filename)
+            f.write('\n')
+
 def get_arguments():
     parser = argparse.ArgumentParser()
 
@@ -167,6 +188,34 @@ def get_arguments():
                         default=0.5)
 
     parser_select.set_defaults(func=_handle_select)
+
+    parser_split = subparsers.add_parser("split",
+                                        help="Split dataset in train, val and test.")
+
+    parser_split.add_argument("-d", "--dataset-dir",
+                              help="Dataset dir",
+                              required=True)
+
+    parser_split.add_argument("-n", "--split-name",
+                              help="Split name.",
+                              required=True)
+
+    parser_split.add_argument("-ts", "--train-size",
+                              help="Train size",
+                              required=True,
+                              type=float)
+    
+    parser_split.add_argument("-vs", "--val-size",
+                              help="Val size",
+                              default=None,
+                              type=float)
+
+    parser_split.add_argument("-tts", "--test-size",
+                              help="Test size",
+                              default=None,
+                              type=float)
+
+    parser_split.set_defaults(func=_handle_split)
     
     args = parser.parse_args()
     args.func(args)
