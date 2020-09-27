@@ -34,6 +34,7 @@ setuptools.setup(
         "scikit-image",
         "sklearn",
         "setuptools",
+        "numba",
         "termcolor"
     ],
     python_requires='>=3.7',

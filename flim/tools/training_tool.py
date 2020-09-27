@@ -1,80 +1,18 @@
 import argparse
 
 import os
+from os import makedirs
+
+import shutil
 
 import torch
-from torch.nn.parallel.data_parallel import data_parallel
+
 import torchvision.transforms as transforms
 
 from ..experiments import utils
 
-def get_arguments():
-    parser = argparse.ArgumentParser()
+
     
-    parser.add_argument('-md', '--markers-dir',
-                        help="Directory to images and markers."
-                        +"Markers and images must have the same name with diffetent extension. "
-                        +"Markers must have txt extensions, "
-                        +"and images might have any image extension or npy extension.", 
-                        required=True)
-
-    parser.add_argument('-d', '--dataset-dir',
-                        help="Dataset to train the mlp.",
-                        required=True)
-
-    parser.add_argument('-ts', '--train-split',
-                        help="Split to train the mlp.",
-                        required=True)
-
-    parser.add_argument("-ad", "--architecture-dir",
-                        help="Architecture dir", 
-                        required=True)
-    
-    parser.add_argument("-od", '--outputs-dir',
-                        help="Where to save outputs produced during traning such as ift datasets.",
-                        required=True)
-    
-    parser.add_argument("-mn", "--model-filename",
-                        help="Model filename",
-                        required=True)
-    
-    parser.add_argument('-e', '--epochs',
-                        help="number of epochs for training",
-                        type=int,
-                        default=15)
-
-    parser.add_argument('-bs', '--batch-size',
-                        help="Batch size used for training",
-                        type=int,
-                        default=4)
-
-    parser.add_argument('-lr', '--learning-rate',
-                        help="Learning rate for optimizer",
-                        type=float,
-                        default=10e-3)
-
-    parser.add_argument('-wd', '--weight-decay',
-                        help="Weight decay",
-                        default=10e-3,
-                        type=float)
-    
-    parser.add_argument('-g', '--gpus',
-                        help='gpus to use',
-                        nargs='*',
-                        type=int)
-
-    parser.add_argument('-s', '--svm',
-                        help='Use SVM as classifier',
-                        action="store_true")
-
-    parser.add_argument("-smn", "--svm-filename",
-                        help="SVM filename. Ex. svm.joblib.",
-                        required=False)
-    
-    args = parser.parse_args()
-    
-    return args
-
 def get_device(gpus):
     gpu = torch.cuda.is_available()
 
@@ -85,9 +23,22 @@ def get_device(gpus):
 
     return device
 
-def main():
-    args = get_arguments()
+def select_images_to_put_markers(dataset_dir, split_path, markers_dir, class_proportion=0.05):
+    transform = transforms.Compose([transforms.ToTensor()])
+    dataset = utils.configure_dataset(dataset_dir, split_path, transform)
 
+    _, images_names = utils.select_images_to_put_markers(dataset, class_proportion)
+
+    if not os.path.exists(markers_dir):
+        os.makedirs(markers_dir)
+
+    for image_name in images_names:
+        src = os.path.join(dataset_dir, image_name)
+        dst = os.path.join(markers_dir, image_name)
+
+        shutil.copy(src=src, dst=dst)
+
+def _handle_train(args):
     architecture = utils.load_architecture(args.architecture_dir)
     images, markers = utils.load_images_and_markers(args.markers_dir)
 
@@ -118,7 +69,113 @@ def main():
                         device=device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
+
+def _handle_select(args):
+    select_images_to_put_markers(args.dataset_dir,
+                                 args.split,
+                                 args.markers_dir,
+                                 args.class_proportion)
+
+def get_arguments():
+    parser = argparse.ArgumentParser()
+
+    subparsers = parser.add_subparsers()
+
+    parser_train = subparsers.add_parser('train',
+                                         help='Train model.')
     
+    parser_train.add_argument('-md', '--markers-dir',
+                        help="Directory to images and markers."
+                        +"Markers and images must have the same name with diffetent extension. "
+                        +"Markers must have txt extensions, "
+                        +"and images might have any image extension or npy extension.", 
+                        required=True)
+
+    parser_train.add_argument('-d', '--dataset-dir',
+                        help="Dataset to train the mlp.",
+                        required=True)
+
+    parser_train.add_argument('-ts', '--train-split',
+                        help="Split to train the mlp.",
+                        required=True)
+
+    parser_train.add_argument("-ad", "--architecture-dir",
+                        help="Architecture dir", 
+                        required=True)
+    
+    parser_train.add_argument("-od", '--outputs-dir',
+                        help="Where to save outputs produced during traning such as ift datasets.",
+                        required=True)
+    
+    parser_train.add_argument("-mn", "--model-filename",
+                        help="Model filename",
+                        required=True)
+    
+    parser_train.add_argument('-e', '--epochs',
+                        help="number of epochs for training",
+                        type=int,
+                        default=15)
+
+    parser_train.add_argument('-bs', '--batch-size',
+                        help="Batch size used for training",
+                        type=int,
+                        default=4)
+
+    parser_train.add_argument('-lr', '--learning-rate',
+                        help="Learning rate for optimizer",
+                        type=float,
+                        default=10e-3)
+
+    parser_train.add_argument('-wd', '--weight-decay',
+                        help="Weight decay",
+                        default=10e-3,
+                        type=float)
+    
+    parser_train.add_argument('-g', '--gpus',
+                        help='gpus to use',
+                        nargs='*',
+                        type=int)
+
+    parser_train.add_argument('-s', '--svm',
+                        help='Use SVM as classifier',
+                        action="store_true")
+
+    parser_train.add_argument("-smn", "--svm-filename",
+                        help="SVM filename. Ex. svm.joblib.",
+                        required=False)
+
+    parser_train.set_defaults(func=_handle_train)
+
+    parser_select = subparsers.add_parser('select',
+                                          help='Select images to put markers')
+
+    parser_select.add_argument('-md', '--markers-dir',
+                        help="Directory to save images to put markers", 
+                        required=True)
+
+    parser_select.add_argument('-d', '--dataset-dir',
+                        help="Dataset directory.",
+                        required=True)
+
+    parser_select.add_argument('-s', '--split',
+                        help="Data set split.",
+                        required=True)
+
+    parser_select.add_argument('-p', '--class-proportion',
+                        help="How many images of each class to select. Must be in range (0, 1].",
+                        type=float,
+                        default=0.5)
+
+    parser_select.set_defaults(func=_handle_select)
+    
+    args = parser.parse_args()
+    args.func(args)
+    
+    return args
+
+
+def main():
+    args = get_arguments()
 
 if __name__ == "__main__":
     main()

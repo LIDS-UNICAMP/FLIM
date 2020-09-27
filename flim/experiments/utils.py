@@ -1,4 +1,5 @@
 import json
+from logging import root
 
 import os
 
@@ -7,6 +8,8 @@ from skimage.color import rgb2lab
 
 import numpy as np
 
+from numba import njit
+
 import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
@@ -14,10 +17,15 @@ import torch.nn as nn
 
 from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score
 from sklearn import svm
+from sklearn.cluster import MiniBatchKMeans
+
+from scipy.spatial.distance import cdist
 
 import joblib
 
 from termcolor import colored
+
+import math
 
 from ..models.lcn import LCNCreator
 from ._dataset import LIDSDataset
@@ -310,3 +318,75 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
     
     print("Calculating metrics...")
     _calulate_metrics(true_labels, pred_labels)
+
+def _images_close_to_center(images, centers):
+    _images = []
+    for center in centers:
+        _center = np.expand_dims(center, 0)
+        
+        dist = cdist(images, _center)
+
+        _images.append(images[np.argmin(dist)])
+    
+    return np.array(_images)
+
+def _find_elems_in_array(a, elems):
+    indices = []
+    for elem in elems:
+        _elem = np.expand_dims(elem, 0)
+        mask = np.all(a == _elem, axis=1)
+
+        indice = np.where(mask)[0][0:1].item()
+
+        indices.append(indice)
+    
+    return indices
+
+
+def select_images_to_put_markers(dataset, class_proportion=0.05):
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+
+    all_images = None
+    all_labels = None
+
+    input_shape = dataset[0][0].shape
+
+    for images, labels in dataloader:
+        if all_images is None:
+            all_images = images
+            all_labels = labels
+        else:
+            all_images = torch.cat((all_images, images))
+            all_labels = torch.cat((all_labels, labels))
+
+    
+    all_images = all_images.flatten(1).numpy()
+    all_labels = all_labels.numpy()
+
+    possible_labels = np.unique(all_labels)
+
+    images_names = []
+
+    roots = None
+
+    for label in possible_labels:
+        images_of_label = all_images[all_labels == label]
+        n_clusters = max(1, math.floor(images_of_label.shape[0]*class_proportion))
+        kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
+        kmeans.fit(images_of_label)
+
+        roots_of_label = _images_close_to_center(images_of_label, kmeans.cluster_centers_)
+
+        if roots is None:
+            roots = roots_of_label
+        else:
+            roots = np.concatenate((roots, roots_of_label))
+        
+        indices = _find_elems_in_array(all_images, roots_of_label)
+
+        for indice in indices:
+            images_names.append(dataset.images_names[indice])
+
+
+    return roots.reshape(-1, *input_shape), images_names
+
