@@ -13,3 +13,4 @@ flake8
 pylama
 termcolor 
 numba
+napari[pyside2]

@@ -39,6 +39,7 @@ setuptools.setup(
     ],
     python_requires='>=3.7',
     entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
-                                      'validate=flim.tools.validating_tool:main'
+                                      'validate=flim.tools.validating_tool:main',
+                                      "annotation=flim.tools.annotation_tool:main"
                                      ]}
 )
