@@ -3,6 +3,8 @@ from logging import root
 
 import os
 
+from numpy.lib.function_base import average
+
 from skimage import io
 from skimage.color import rgb2lab
 
@@ -199,14 +201,15 @@ def load_model(model_path, architecture, input_shape):
     return model
 
 def _calulate_metrics(true_labels, pred_labels):
+    average = 'binary' if np.unique(true_labels).shape[0] == 2 else 'weighted'
     acc = 1.0*(true_labels == pred_labels).sum()/true_labels.shape[0]
     precision, recall, f_score, support = precision_recall_fscore_support(true_labels, pred_labels, zero_division=0)
-    precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average='weighted', zero_division=0)
+    precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average=average, zero_division=0)
 
     print("#" * 50)
     print(colored("Acc", "yellow"),f': {colored(f"{acc:.6f}", "blue", attrs=["bold"])}')
     print("-" * 50)
-    print(colored("F1-score", "yellow"), f': {colored(f"{f1_score(true_labels, pred_labels):.6f}", "blue", attrs=["bold"])}')
+    print(colored("F1-score", "yellow"), f': {colored(f"{f1_score(true_labels, pred_labels, average=average):.6f}", "blue", attrs=["bold"])}')
     print("-" * 50)
     print("Precision:", *precision)
     print("Recall:", *recall)
@@ -264,7 +267,7 @@ def validate_model(model,
     _calulate_metrics(true_labels, pred_labels)
 
 def train_svm(model, train_set, batch_size=32, device='cpu'):
-    clf = svm.LinearSVC(max_iter=50000)
+    clf = svm.LinearSVC(max_iter=200000)
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
     model.eval()

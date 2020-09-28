@@ -37,7 +37,7 @@ class SpecialLinearLayer(nn.Module):
     def initialize_weights(self,
                            features=None,
                            labels=None,
-                           kernels_per_label=0.8):
+                           kernels_per_label=0.85):
 
         
         if features is not None and labels is not None:
