@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 from skimage import io
-from skimage.color import rgb2lab
+from skimage.color import rgb2lab, gray2rgb
 
 __all__ = ["LIDSDataset"]
 
@@ -23,7 +23,12 @@ class LIDSDataset(Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.root_dir, self.images_names[idx])
-        image = rgb2lab(io.imread(image_path))
+        image = io.imread(image_path)
+        
+        if image.ndim == 2:
+            image = gray2rgb(image)
+            
+        image = rgb2lab(image)
         image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
         
         image = image.astype(np.float32)

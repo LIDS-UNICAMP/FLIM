@@ -101,7 +101,7 @@ class LCNCreator:
         self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
-        self._input_shape = input_shape
+        self._input_shape = np.array(input_shape)
         self._architecture = architecture
         if images is None:
             self._in_channels = input_shape[-1]
@@ -149,8 +149,8 @@ class LCNCreator:
         module, out_channels = self._build_module(architecture,
                                     images,
                                     markers,
-                                    remove_similar_filters,
-                                    similarity_level)
+                                    remove_similar_filters=remove_similar_filters,
+                                    similarity_level=similarity_level)
 
         self.last_conv_layer_out_channels = out_channels
 
@@ -274,18 +274,24 @@ class LCNCreator:
                         pool_config = layer_config['pool']
 
                         stride = pool_config['params']['stride']
-
-                        output_shape[0] = output_shape[0]//stride
-                        output_shape[1] = output_shape[1]//stride
-                    
-                    layer = operation(
-                        in_channels=last_conv_layer_out_channels,
-                        **operation_params,
-                        activation_config=activation_config,
-                        pool_config=pool_config)
-                    if images is None or markers is None:
+                        padding = pool_config['params']['padding']
+                        kernel_size = pool_config['params']['kernel_size']
+                        
+                        
+                        output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                        output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                        
+                        # output_shape[0] = output_shape[0]//stride
+                        # output_shape[1] = output_shape[1]//stride
+                    operation_params['in_channels'] = last_conv_layer_out_channels
+                    layer = operation(**operation_params,
+                                      activation_config=activation_config,
+                                      pool_config=pool_config)
+                    if (images is None or markers is None) and state_dict is not None:
                         kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
                         layer.initialize_weights(kernels_number=kernels_number)
+                    elif (images is None or markers is None) and 'out_channels' in operation_params:
+                        layer.initialize_weights(kernels_number=operation_params['out_channels'])
                     else:
                         layer.initialize_weights(images, markers)
 
@@ -377,6 +383,7 @@ class LCNCreator:
         cls_architecture = architecture['classifier']['layers']
 
         for key in cls_architecture:
+            print(key)
             layer_config = cls_architecture[key]
             
             operation = __operations__[layer_config['operation']]
@@ -384,6 +391,7 @@ class LCNCreator:
             
             if layer_config['operation'] == 'linear':
                 if operation_params['in_features'] == -1:
+                    print(self._output_shape)
                     operation_params['in_features'] = np.prod(self._output_shape)
 
                 if train_set is None and state_dict is not None:
@@ -414,12 +422,12 @@ class LCNCreator:
                 features = outputs.numpy()
 
             classifier.add_module(key, layer)
-            
+        print("Initialize")
         #initialization
         if features is None:
             for m in classifier.modules():
                 if isinstance(m, SpecialLinearLayer):
-                    #nn.init.normal_(m.weight, 0, 0.01)
+                    m._linear.weight.data.normal_(0, 0.01)
                     if m._linear.bias is not None:
                         nn.init.constant_(m._linear.bias, 0)   
 

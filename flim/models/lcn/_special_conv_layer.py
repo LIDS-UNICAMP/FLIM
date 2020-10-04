@@ -13,6 +13,8 @@ from sklearn.cluster import MiniBatchKMeans
 
 from scipy.spatial import distance
 
+import math
+
 
 __all__ = ['SpecialConvLayer']
 
@@ -59,6 +61,7 @@ class SpecialConvLayer(nn.Module):
 
     def __init__(self,
                  in_channels,
+                 out_channels=1,
                  kernel_size=3,
                  padding=1,
                  stride=1,
@@ -104,7 +107,7 @@ class SpecialConvLayer(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.bias = bias
-        self.out_channels = 1
+        self.out_channels = out_channels
     
         self._activation_config = activation_config
         self._pool_config = pool_config
@@ -164,6 +167,10 @@ class SpecialConvLayer(nn.Module):
             torch.Tensor(np.rollaxis(kernels_weights, 3, 1)))
 
         self._conv.weight.requires_grad = False
+        
+        if images is None or markers is None:
+            n = self.kernel_size * self.kernel_size * self.out_channels
+            self._conv.weight.data.normal_(0, math.sqrt(2. / n))
         
         if self._activation_config is not None:
             self._activation = __operations__[
@@ -416,7 +423,7 @@ class SpecialConvLayer(nn.Module):
         if self._pool is not None:
             # print("max pooling")
             y = self._pool.forward(y)
-        
+
         return y
         
     def _calculate_weights(self, images, markers):

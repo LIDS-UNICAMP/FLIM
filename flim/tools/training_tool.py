@@ -20,6 +20,10 @@ def get_device(gpus):
         device = torch.device('cpu')
     else:
         device = torch.device(gpus[0])
+        
+    print(device)
+    print(gpus)
+    print(gpu)
 
     return device
 
@@ -40,17 +44,38 @@ def select_images_to_put_markers(dataset_dir, split_path, markers_dir, class_pro
 
 def _handle_train(args):
     architecture = utils.load_architecture(args.architecture_dir)
-    images, markers = utils.load_images_and_markers(args.markers_dir)
+    if not args.load_lids_model and not args.backpropagation:
+        images, markers = utils.load_images_and_markers(args.markers_dir)
+    else:
+        images, markers = None, None
 
     device = get_device(args.gpus)
 
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
-    model = utils.build_model(architecture,
-                              images,
-                              markers,
-                              train_set=dataset,
-                              device=device)
+    
+    input_shape = dataset[0][0].permute(1, 2, 0).shape
+    
+    print(input_shape)
+
+    if not args.load_lids_model and not args.backpropagation:
+        model = utils.build_model(architecture,
+                                images,
+                                markers,
+                                input_shape=input_shape,
+                                train_set=dataset,
+                                device=device)
+    else:
+        model = utils.build_model(architecture,
+                                images,
+                                markers,
+                                input_shape=input_shape,
+                                device=device)
+    
+    if args.load_lids_model:
+        model = utils.load_lids_model(model,
+                                      args.lids_model_dir,
+                                      architecture)
 
     if args.svm:
         svm = utils.train_svm(model,
@@ -59,7 +84,7 @@ def _handle_train(args):
                               device)
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
         
-    elif "classifier" in architecture:
+    if args.backpropagation:
         utils.train_mlp(model,
                         dataset,
                         args.epochs,
@@ -109,8 +134,7 @@ def get_arguments():
                         help="Directory to images and markers."
                         +"Markers and images must have the same name with diffetent extension. "
                         +"Markers must have txt extensions, "
-                        +"and images might have any image extension or npy extension.", 
-                        required=True)
+                        +"and images might have any image extension or npy extension.")
 
     parser_train.add_argument('-d', '--dataset-dir',
                         help="Dataset to train the mlp.",
@@ -164,6 +188,20 @@ def get_arguments():
     parser_train.add_argument("-smn", "--svm-filename",
                         help="SVM filename. Ex. svm.joblib.",
                         required=False)
+    
+    parser_train.add_argument("-b",
+                              "--backpropagation",
+                              help="Use backpropagation to trian layers.",
+                              action="store_true")
+    
+    parser_train.add_argument("-ld",
+                              "--load-lids-model",
+                              help="Load model saved in LIDS format.",
+                              action="store_true")
+    
+    parser_train.add_argument("-ldd",
+                              "--lids-model-dir",
+                              help="LIDS model dir.")
 
     parser_train.set_defaults(func=_handle_train)
 

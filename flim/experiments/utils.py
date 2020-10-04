@@ -11,13 +11,14 @@ from skimage.color import rgb2lab
 import numpy as np
 
 from numba import njit
+from sklearn.metrics.pairwise import _return_float_dtype
 
 import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
 
-from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score
+from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score, confusion_matrix
 from sklearn import svm
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.model_selection import train_test_split
@@ -30,7 +31,7 @@ from termcolor import colored
 
 import math
 
-from ..models.lcn import LCNCreator
+from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer
 from ._dataset import LIDSDataset
 
 def load_image(image_dir):
@@ -98,12 +99,14 @@ def configure_dataset(dataset_dir, split_dir, transform=None):
 def build_model(architecture,
                 images,
                 markers,
+                input_shape=None,
                 batch_size=32,
                 train_set=None,
                 device='cpu'):
     creator = LCNCreator(architecture,
                          images=images,
                          markers=markers,
+                         input_shape=input_shape,
                          batch_size=batch_size,
                          relabel_markers=False,
                          device=device)
@@ -177,6 +180,62 @@ def train_mlp(model,
         epoch_acc = running_corrects.double()/len(train_set)
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
+        
+
+def train_model(model,
+                train_set,
+                epochs=30,
+                batch_size=64,
+                lr=1e-3,
+                weight_decay=1e-3,
+                criterion=nn.CrossEntropyLoss(),
+                device='cpu'):
+
+
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+
+    model.to(device)
+    model.train()
+
+    #optimizer
+    optimizer = optim.Adam(model.classifier.parameters(),
+                           lr=lr,
+                           weight_decay=weight_decay)
+  
+    #training
+    print(f"Training classifier for {epochs} epochs")
+    for epoch in range(0, epochs):
+        print('-' * 40)
+        print('Epoch {}/{}'.format(epoch, epochs - 1))
+        
+        running_loss = 0.0
+        running_corrects = 0.0
+
+        for i, data in enumerate(dataloader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            
+            loss = criterion(outputs, labels)
+            preds = torch.max(outputs, 1)[1]
+            
+            loss.backward()
+            #clip_grad_norm_(self.mlp.parameters(), 1)
+            
+            optimizer.step()
+            
+            #print(outputs)
+            
+            running_loss += loss.item()*inputs.size(0)/len(train_set)
+            running_corrects += torch.sum(preds == labels.data) 
+        
+        #scheduler.step()
+        epoch_loss = running_loss
+        epoch_acc = running_corrects.double()/len(train_set)
+
+        print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
 
 
 def save_model(model, outputs_dir, model_filename):
@@ -200,16 +259,77 @@ def load_model(model_path, architecture, input_shape):
 
     return model
 
+def load_lids_model(model, lids_model_dir, architecture):
+    for name, layer in model.feature_extractor.named_children():
+        print(name)
+        if isinstance(layer, SpecialConvLayer):
+            weights = np.load(os.path.join(lids_model_dir,
+                                           f"{name}-train1-seeds-kernels.npy"))
+            
+            in_channels = layer.in_channels
+            out_channels = layer.out_channels
+            kernel_size = layer.kernel_size
+            
+            with open(os.path.join(lids_model_dir,
+                                           f"{name}-train1-seeds-mean.txt")) as f:
+                lines = f.readlines()[0]
+                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                
+            with open(os.path.join(lids_model_dir,
+                                           f"{name}-train1-seeds-stdev.txt")) as f:
+                lines = f.readlines()[0]
+                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            
+            weights = weights.transpose()
+            weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
+            
+            layer.mean_by_channel = torch.from_numpy(mean.reshape(1, -1, 1, 1)).float()
+            layer.std_by_channel = torch.from_numpy(std.reshape(1, -1, 1, 1)).float()
+            
+            layer._conv.weight = nn.Parameter(torch.from_numpy(weights).float())
+    
+    classifier_arch = architecture['classifier']['layers']
+    for name, layer in model.classifier.named_children():
+        if "backpropagation" in classifier_arch[name]:
+            if classifier_arch[name]['backpropagation']:
+                continue
+        if isinstance(layer, SpecialLinearLayer):
+            weights = np.load(os.path.join(lids_model_dir,
+                                           f"{name}-train1.npy"))
+            weights = weights.transpose()
+            
+            with open(os.path.join(lids_model_dir,
+                                           f"{name}-train1-mean.txt")) as f:
+                lines = f.readlines()
+                mean = np.array([float(line) for line in lines])
+                
+            with open(os.path.join(lids_model_dir,
+                                           f"{name}-train1-stdev.txt")) as f:
+                lines = f.readlines()
+                std = np.array([float(line) for line in lines])
+                
+            layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
+            layer.std = torch.from_numpy(std.reshape(1, -1)).float()
+            
+            layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
+                
+    return model
+        
+
 def _calulate_metrics(true_labels, pred_labels):
     average = 'binary' if np.unique(true_labels).shape[0] == 2 else 'weighted'
     acc = 1.0*(true_labels == pred_labels).sum()/true_labels.shape[0]
     precision, recall, f_score, support = precision_recall_fscore_support(true_labels, pred_labels, zero_division=0)
     precision_w, recall_w, f_score_w, _ = precision_recall_fscore_support(true_labels, pred_labels, average=average, zero_division=0)
+    cm = confusion_matrix(true_labels, pred_labels)
+    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
 
     print("#" * 50)
     print(colored("Acc", "yellow"),f': {colored(f"{acc:.6f}", "blue", attrs=["bold"])}')
     print("-" * 50)
     print(colored("F1-score", "yellow"), f': {colored(f"{f1_score(true_labels, pred_labels, average=average):.6f}", "blue", attrs=["bold"])}')
+    print("-" * 50)
+    print("Accuracy", *cm.diagonal())
     print("-" * 50)
     print("Precision:", *precision)
     print("Recall:", *recall)

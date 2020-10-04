@@ -25,7 +25,7 @@ class SpecialLinearLayer(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.bias = bias
-
+        
         self.register_buffer('mean', torch.zeros(1, in_features))
         self.register_buffer('std', torch.ones(1, in_features))
 
@@ -49,10 +49,11 @@ class SpecialLinearLayer(nn.Module):
             
             weights = torch.rand(self.in_features,
                                          self.out_features).numpy().transpose()
-
+        print("features", features)
         self.in_features = weights.shape[1]
         self.out_features = weights.shape[0]
 
+        print(self.in_features)
         self._linear = nn.Linear(self.in_features, self.out_features, bias=self.bias)
         self._linear.weight = nn.Parameter(torch.Tensor(weights))
     
@@ -96,9 +97,9 @@ class SpecialLinearLayer(nn.Module):
 
         mean = self.mean
         std = self.std
-
-        x = (x - mean)/std
         
+        x = (x - mean)/std
+    
         y = self._linear(x)
         
         return y
