@@ -169,8 +169,12 @@ class SpecialConvLayer(nn.Module):
         self._conv.weight.requires_grad = False
         
         if images is None or markers is None:
+            print("Initialing with xavier")
             n = self.kernel_size * self.kernel_size * self.out_channels
             self._conv.weight.data.normal_(0, math.sqrt(2. / n))
+            
+            if self._conv.bias is not None:
+                self._conv.bias.data.zero_()
         
         if self._activation_config is not None:
             self._activation = __operations__[
@@ -314,7 +318,7 @@ class SpecialConvLayer(nn.Module):
 
         self._conv.to(self.device)
 
-        self._conv.weight.requires_grad = False
+        # self._conv.weight.requires_grad = False
 
     def remove_filters(self, filter_indices):
         """Remove Conv2D filters.
@@ -423,7 +427,7 @@ class SpecialConvLayer(nn.Module):
         if self._pool is not None:
             # print("max pooling")
             y = self._pool.forward(y)
-
+    
         return y
         
     def _calculate_weights(self, images, markers):

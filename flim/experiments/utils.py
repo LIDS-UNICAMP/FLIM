@@ -193,14 +193,18 @@ def train_model(model,
 
 
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-
+    
     model.to(device)
     model.train()
 
     #optimizer
-    optimizer = optim.Adam(model.classifier.parameters(),
+    optimizer = optim.Adam(model.parameters(),
                            lr=lr,
                            weight_decay=weight_decay)
+    
+    scheduler = optim.lr_scheduler.StepLR(optimizer,
+                                          step_size=15,
+                                          gamma=0.1)
   
     #training
     print(f"Training classifier for {epochs} epochs")
@@ -222,7 +226,7 @@ def train_model(model,
             preds = torch.max(outputs, 1)[1]
             
             loss.backward()
-            #clip_grad_norm_(self.mlp.parameters(), 1)
+            # nn.utils.clip_grad_norm_(model.parameters(), 1)
             
             optimizer.step()
             
@@ -231,7 +235,7 @@ def train_model(model,
             running_loss += loss.item()*inputs.size(0)/len(train_set)
             running_corrects += torch.sum(preds == labels.data) 
         
-        #scheduler.step()
+        scheduler.step()
         epoch_loss = running_loss
         epoch_acc = running_corrects.double()/len(train_set)
 
