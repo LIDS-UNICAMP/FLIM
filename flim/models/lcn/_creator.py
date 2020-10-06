@@ -58,7 +58,8 @@ class LCNCreator:
                  batch_size=32,
                  relabel_markers=True,
                  device='cpu',
-                 superpixels_markers=None):
+                 superpixels_markers=None,
+                 remove_border=0):
         """Initialize the class.
 
         Parameters
@@ -103,6 +104,7 @@ class LCNCreator:
         self._markers = markers
         self._input_shape = np.array(input_shape)
         self._architecture = architecture
+    
         if images is None:
             self._in_channels = input_shape[-1]
         else:
@@ -115,7 +117,7 @@ class LCNCreator:
 
         self.device = device
         
-        self.LCN = LIDSConvNet()
+        self.LCN = LIDSConvNet(remove_boder=remove_border)
         
     def build_feature_extractor(self,
                                 remove_similar_filters=False,

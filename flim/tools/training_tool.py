@@ -7,6 +7,8 @@ import shutil
 
 import torch
 
+import numpy as np
+
 import torchvision.transforms as transforms
 
 from ..experiments import utils
@@ -43,13 +45,19 @@ def select_images_to_put_markers(dataset_dir, split_path, markers_dir, class_pro
         shutil.copy(src=src, dst=dst)
 
 def _handle_train(args):
+    device = get_device(args.gpus)
+    
+    torch.manual_seed(42)
+    np.random.seed(42)
+    if device != 'cpu':
+        torch.backends.cudnn.deterministic = True
+        
     architecture = utils.load_architecture(args.architecture_dir)
     if not args.load_lids_model and not args.backpropagation:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
         images, markers = None, None
 
-    device = get_device(args.gpus)
 
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
@@ -64,12 +72,14 @@ def _handle_train(args):
                                 markers,
                                 input_shape=input_shape,
                                 train_set=dataset,
+                                remove_border=args.remove_border,
                                 device=device)
     else:
         model = utils.build_model(architecture,
                                 images,
                                 markers,
                                 input_shape=input_shape,
+                                remove_border=args.remove_border,
                                 device=device)
     
     if args.load_lids_model:
@@ -85,13 +95,13 @@ def _handle_train(args):
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
         
     if args.backpropagation:
-        utils.train_mlp(model,
-                        dataset,
-                        args.epochs,
-                        args.batch_size,
-                        args.learning_rate,
-                        args.weight_decay,
-                        device=device)
+        utils.train_model(model,
+                         dataset,
+                         args.epochs,
+                         args.batch_size,
+                         args.learning_rate,
+                         args.weight_decay,
+                         device=device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
 
@@ -202,6 +212,13 @@ def get_arguments():
     parser_train.add_argument("-ldd",
                               "--lids-model-dir",
                               help="LIDS model dir.")
+    
+    
+    parser_train.add_argument("-rb",
+                              "--remove-border",
+                              help="Remove border of size before classifier.",
+                              type=int,
+                              default=0)
 
     parser_train.set_defaults(func=_handle_train)
 

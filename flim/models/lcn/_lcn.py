@@ -24,11 +24,12 @@ class LIDSConvNet(nn.Sequential):
 
     """
 
-    def __init__(self):
+    def __init__(self, remove_boder=0):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self.feature_extractor = nn.Sequential()
         self.classifier = nn.Sequential()
+        self._remove_border = remove_boder
         self._logger = logging.getLogger()
 
     def forward(self, x):
@@ -54,7 +55,11 @@ class LIDSConvNet(nn.Sequential):
         for _, layer in self.feature_extractor.named_children():
             _y = layer.forward(x)
             x = _y
-
+        b = self._remove_border
+        
+        if b > 0:
+            x = x[:,:, b:-b, b:-b]
+            
         x = x.flatten(1)
         
         _y = self.classifier(x)

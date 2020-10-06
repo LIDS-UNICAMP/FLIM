@@ -102,13 +102,20 @@ def build_model(architecture,
                 input_shape=None,
                 batch_size=32,
                 train_set=None,
+                remove_border=0,
                 device='cpu'):
+    torch.manual_seed(42)
+    np.random.seed(42)
+    if device != 'cpu':
+        torch.backends.cudnn.deterministic = True
+        
     creator = LCNCreator(architecture,
                          images=images,
                          markers=markers,
                          input_shape=input_shape,
                          batch_size=batch_size,
                          relabel_markers=False,
+                         remove_border=remove_border,
                          device=device)
 
     print("Building feature extractor...")
@@ -191,7 +198,11 @@ def train_model(model,
                 criterion=nn.CrossEntropyLoss(),
                 device='cpu'):
 
-
+    torch.manual_seed(42)
+    np.random.seed(42)
+    if device != 'cpu':
+        torch.backends.cudnn.deterministic = True
+    
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     
     model.to(device)
@@ -237,9 +248,12 @@ def train_model(model,
         
         scheduler.step()
         epoch_loss = running_loss
-        epoch_acc = running_corrects.double()/len(train_set)
+        epoch_acc = (running_corrects.double()/len(train_set)).item()
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
+        
+        if epoch_acc >= 0.9900000:
+            break
 
 
 def save_model(model, outputs_dir, model_filename):
