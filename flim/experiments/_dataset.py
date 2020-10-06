@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 from skimage import io
-from skimage.color import rgb2lab, gray2rgb
+from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
 __all__ = ["LIDSDataset"]
 
@@ -27,7 +27,10 @@ class LIDSDataset(Dataset):
         
         if image.ndim == 2:
             image = gray2rgb(image)
-            
+        
+        elif image.shape[2] == 4:
+            image = rgba2rgb(image)
+        
         image = rgb2lab(image)
         image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
         

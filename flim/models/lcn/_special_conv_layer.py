@@ -427,7 +427,7 @@ class SpecialConvLayer(nn.Module):
         if self._pool is not None:
             # print("max pooling")
             y = self._pool.forward(y)
-    
+
         return y
         
     def _calculate_weights(self, images, markers):
