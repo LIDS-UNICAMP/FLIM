@@ -40,6 +40,12 @@ def get_arguments():
                         help="Saved SVM path. Ex. svm.joblib.",
                         required=False)
     
+    parser.add_argument("-rb",
+                        "--remove-border",
+                        help="Remove border of size before classifier.",
+                        type=int,
+                        default=0)
+    
     args = parser.parse_args()
     
     return args
@@ -65,7 +71,7 @@ def main():
     dataset = utils.configure_dataset(args.dataset_dir, args.val_split, transform)
     input_shape = list(dataset[0][0].permute(1, 2, 0).size())
 
-    model = utils.load_model(args.model_path, architecture, input_shape)
+    model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border)
 
     if args.svm:
         clf = utils.load_svm(args.svm_path)

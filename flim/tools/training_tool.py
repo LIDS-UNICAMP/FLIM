@@ -101,6 +101,7 @@ def _handle_train(args):
                          args.batch_size,
                          args.learning_rate,
                          args.weight_decay,
+                         step=args.step,
                          device=device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
@@ -219,6 +220,12 @@ def get_arguments():
                               help="Remove border of size before classifier.",
                               type=int,
                               default=0)
+    
+    parser_train.add_argument("-st",
+                              "--step",
+                              help="Step for leraning rate scheduler.",
+                              type=int,
+                              default=15)
 
     parser_train.set_defaults(func=_handle_train)
 

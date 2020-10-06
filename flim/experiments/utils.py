@@ -195,6 +195,7 @@ def train_model(model,
                 batch_size=64,
                 lr=1e-3,
                 weight_decay=1e-3,
+                step=0,
                 criterion=nn.CrossEntropyLoss(),
                 device='cpu'):
 
@@ -212,10 +213,10 @@ def train_model(model,
     optimizer = optim.Adam(model.parameters(),
                            lr=lr,
                            weight_decay=weight_decay)
-    
-    scheduler = optim.lr_scheduler.StepLR(optimizer,
-                                          step_size=15,
-                                          gamma=0.1)
+    if step > 0:
+        scheduler = optim.lr_scheduler.StepLR(optimizer,
+                                            step_size=15,
+                                            gamma=0.1)
   
     #training
     print(f"Training classifier for {epochs} epochs")
@@ -244,9 +245,11 @@ def train_model(model,
             #print(outputs)
             
             running_loss += loss.item()*inputs.size(0)/len(train_set)
-            running_corrects += torch.sum(preds == labels.data) 
-        
-        scheduler.step()
+            running_corrects += torch.sum(preds == labels.data)
+            
+        if step > 0:
+            scheduler.step()
+            
         epoch_loss = running_loss
         epoch_acc = (running_corrects.double()/len(train_set)).item()
 
@@ -264,11 +267,12 @@ def save_model(model, outputs_dir, model_filename):
     print("Saving model...")
     torch.save(model.state_dict(), dir_to_save)
 
-def load_model(model_path, architecture, input_shape):
-    state_dict = torch.load(model_path)
+def load_model(model_path, architecture, input_shape, remove_border=0):
+    state_dict = torch.load(model_path, map_location=torch.device('cpu'))
 
     creator = LCNCreator(architecture,
                          input_shape=input_shape,
+                         remove_border=remove_border,
                          relabel_markers=False)
     print("Loading model...")
     creator.load_model(state_dict)
