@@ -46,6 +46,17 @@ def get_arguments():
                         type=int,
                         default=0)
     
+    parser.add_argument("-tm",
+                        "--torchvision-model",
+                        help="Torchvision model",
+                        choices=["vgg16_bn"],
+                        default=None)
+    
+    parser.add_argument("-nc",
+                        "--number-classes",
+                        help="Number of classes",
+                        type=int)
+    
     args = parser.parse_args()
     
     return args
@@ -63,20 +74,32 @@ def get_device(gpus):
 def main():
     args = get_arguments()
 
-    architecture = utils.load_architecture(args.architecture_dir)
 
     device = get_device(args.gpus)
 
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.val_split, transform)
     input_shape = list(dataset[0][0].permute(1, 2, 0).size())
-
-    model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border)
+    
+    architecture = None
+    
+    if args.torchvision_model is None:
+        architecture = utils.load_architecture(args.architecture_dir)
+        model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border)
+    else:
+        model = utils.get_torchvision_model(args.torchvision_model,
+                                            args.number_classes,
+                                            pretrained=False,
+                                            device=device)
+        
+        
+        model = utils.load_torchvision_model_weights(model, args.model_path)
+        model.to(device)
 
     if args.svm:
         clf = utils.load_svm(args.svm_path)
         utils.validate_svm(model, clf, dataset, device=device)
-    elif "classifier" in architecture:
+    elif args.torchvision_model is not None or "classifier" in architecture:
         utils.validate_model(model, dataset)
     else:
         print("No classifier to evaluate...")

@@ -18,6 +18,8 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
 
+from torchvision.models import vgg16_bn
+
 from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score, confusion_matrix
 from sklearn import svm
 from sklearn.cluster import MiniBatchKMeans
@@ -131,7 +133,35 @@ def build_model(architecture,
 
     return model
 
+def get_torchvision_model(model_name, number_classes, pretrained=True, device='cpu'):
+    model = None
+    if model_name == "vgg16_bn":
+        if pretrained:
+            model = vgg16_bn(pretrained=pretrained)
+            model.classifier = nn.Sequential(
+                                    nn.Linear(512 * 7 * 7, 4096),
+                                    nn.ReLU(True),
+                                    nn.Dropout(),
+                                    nn.Linear(4096, 4096),
+                                    nn.ReLU(True),
+                                    nn.Dropout(),
+                                    nn.Linear(4096, number_classes),
+                                )
+            
+            for m in model.classifier.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.Linear):
+                    nn.init.normal_(m.weight, 0, 0.01)
+                    nn.init.constant_(m.bias, 0)
 
+        else:
+            model = vgg16_bn(num_classes=number_classes, init_weights=True)
+            
+        model.to(device)
+    return model
+        
 def train_mlp(model,
               train_set,
               epochs=30,
@@ -280,6 +310,13 @@ def load_model(model_path, architecture, input_shape, remove_border=0):
     model = creator.get_LIDSConvNet()
 
     return model
+
+def load_torchvision_model_weights(model, weigths_path):
+    state_dict = torch.load(weigths_path, map_location=torch.device('cpu'))
+    model.load_state_dict(state_dict)
+    
+    return model
+    
 
 def load_lids_model(model, lids_model_dir, architecture):
     for name, layer in model.feature_extractor.named_children():

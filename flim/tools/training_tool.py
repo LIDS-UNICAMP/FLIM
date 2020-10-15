@@ -1,7 +1,7 @@
 import argparse
 
 import os
-from os import makedirs
+from os import access, makedirs
 
 import shutil
 
@@ -52,7 +52,11 @@ def _handle_train(args):
     if device != 'cpu':
         torch.backends.cudnn.deterministic = True
         
-    architecture = utils.load_architecture(args.architecture_dir)
+    architecture = None
+    
+    if args.torchvision_model is None:  
+        architecture = utils.load_architecture(args.architecture_dir)
+        
     if not args.load_lids_model and not args.backpropagation:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
@@ -66,7 +70,7 @@ def _handle_train(args):
     
     print(input_shape)
 
-    if not args.load_lids_model and not args.backpropagation:
+    if architecture is not None and not args.load_lids_model and not args.backpropagation:
         model = utils.build_model(architecture,
                                 images,
                                 markers,
@@ -74,14 +78,21 @@ def _handle_train(args):
                                 train_set=dataset,
                                 remove_border=args.remove_border,
                                 device=device)
-    else:
+    elif architecture is not None:
         model = utils.build_model(architecture,
                                 images,
                                 markers,
                                 input_shape=input_shape,
                                 remove_border=args.remove_border,
                                 device=device)
-    
+        
+    else:
+        model = utils.get_torchvision_model(args.torchvision_model,
+                                            args.number_classes,
+                                            pretrained=args.pretrained,
+                                            device=device)
+        
+               
     if args.load_lids_model:
         model = utils.load_lids_model(model,
                                       args.lids_model_dir,
@@ -156,8 +167,7 @@ def get_arguments():
                         required=True)
 
     parser_train.add_argument("-ad", "--architecture-dir",
-                        help="Architecture dir", 
-                        required=True)
+                        help="Architecture dir")
     
     parser_train.add_argument("-od", '--outputs-dir',
                         help="Where to save outputs produced during traning such as ift datasets.",
@@ -226,6 +236,22 @@ def get_arguments():
                               help="Step for leraning rate scheduler.",
                               type=int,
                               default=15)
+    
+    parser_train.add_argument("-tm",
+                              "--torchvision-model",
+                              help="Torchvision model",
+                              choices=["vgg16_bn"],
+                              default=None)
+    
+    parser_train.add_argument("-nc",
+                              "--number-classes",
+                              help="Number of classes",
+                              type=int)
+    
+    parser_train.add_argument("-pt",
+                              "--pretrained",
+                              help="Use pretrained weigths",
+                              action="store_true")
 
     parser_train.set_defaults(func=_handle_train)
 
