@@ -57,7 +57,7 @@ def _handle_train(args):
     if args.torchvision_model is None:  
         architecture = utils.load_architecture(args.architecture_dir)
         
-    if not args.load_lids_model and not args.backpropagation:
+    if not args.load_lids_model and not args.backpropagation and not args.torchvision_model:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
         images, markers = None, None
@@ -98,11 +98,6 @@ def _handle_train(args):
                                       args.lids_model_dir,
                                       architecture)
 
-    if args.svm:
-        svm = utils.train_svm(model,
-                              dataset,
-                              args.batch_size,
-                              device)
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
         
     if args.backpropagation:
@@ -114,6 +109,11 @@ def _handle_train(args):
                          args.weight_decay,
                          step=args.step,
                          device=device)
+    if args.svm:
+        svm = utils.train_svm(model,
+                              dataset,
+                              args.batch_size,
+                              device)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
 

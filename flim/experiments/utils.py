@@ -456,7 +456,7 @@ def train_svm(model, train_set, batch_size=32, device='cpu'):
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model(inputs).detach()
+        outputs = model.features(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
@@ -492,7 +492,7 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         
         inputs, labels = inputs.to(device), labels.to(device)
         
-        outputs = model(inputs).detach()
+        outputs = model.features(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 

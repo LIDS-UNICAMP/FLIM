@@ -20,8 +20,7 @@ def get_arguments():
                         required=True)
 
     parser.add_argument("-ad", "--architecture-dir",
-                        help="Architecture dir", 
-                        required=True)
+                        help="Architecture dir")
     
     parser.add_argument("-mp", "--model-path",
                         help="Saved model path.",
