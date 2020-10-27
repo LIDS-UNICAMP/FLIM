@@ -91,14 +91,10 @@ def _handle_train(args):
                                             args.number_classes,
                                             pretrained=args.pretrained,
                                             device=device)
-        
-               
     if args.load_lids_model:
         model = utils.load_lids_model(model,
                                       args.lids_model_dir,
                                       architecture)
-
-        utils.save_svm(svm, args.outputs_dir, args.svm_filename)
         
     if args.backpropagation:
         utils.train_model(model,
@@ -114,6 +110,9 @@ def _handle_train(args):
                               dataset,
                               args.batch_size,
                               device)
+        
+        utils.save_svm(svm, args.outputs_dir, args.svm_filename)
+
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
 

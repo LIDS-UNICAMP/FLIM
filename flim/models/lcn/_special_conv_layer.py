@@ -118,9 +118,15 @@ class SpecialConvLayer(nn.Module):
         self._activation = None
         self._pool = None
 
-        self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
-        self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
-
+        #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
+        #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
+        
+        #self.mean_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
+        #self.std_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
+        
+        self.register_parameter('mean_by_channel', nn.Parameter(torch.zeros(1, self.in_channels, 1, 1)))
+        self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, self.in_channels, 1, 1)))
+        
         self.device = device
         
         self._logger = logging.getLogger()
@@ -378,8 +384,15 @@ class SpecialConvLayer(nn.Module):
         This method modifies the module in-place.
 
         """
-        self.mean_by_channel = self.mean_by_channel.to(device)
-        self.std_by_channel = self.std_by_channel.to(device)
+        super(SpecialConvLayer, self).to()
+        
+        self.mean_by_channel = nn.Parameter(self.mean_by_channel.to(device))
+        self.std_by_channel = nn.Parameter(self.std_by_channel.to(device))
+        
+        print("parameter", self.mean_by_channel.device)
+        
+        #self.mean_by_channel.to(device)
+        #self.std_by_channel.to(device)
         
         self._conv = self._conv.to(device)
 
@@ -414,13 +427,14 @@ class SpecialConvLayer(nn.Module):
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
 
-        mean = self.mean_by_channel.view(1, -1, 1, 1)
-        std = self.std_by_channel.view(1, -1, 1, 1)
-
+        mean = self.mean_by_channel
+        std = self.std_by_channel
+        
         x = (x - mean)/std
         
         y = self._conv(x)
 
+        
         if self._activation is not None:
             y = self._activation.forward(y)
         

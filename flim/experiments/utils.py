@@ -240,9 +240,16 @@ def train_model(model,
     model.train()
 
     #optimizer
-    optimizer = optim.Adam(model.parameters(),
-                           lr=lr,
-                           weight_decay=weight_decay)
+    optimizer = optim.Adam([{
+                                "params": model.feature_extractor.parameters(),
+                                "lr": lr,
+                                "weight_decay": weight_decay
+                            },
+                            {
+                                "params": model.classifier.parameters(),
+                                "lr": lr,
+                                "weight_decay": weight_decay
+                            }])
     if step > 0:
         scheduler = optim.lr_scheduler.StepLR(optimizer,
                                             step_size=15,
@@ -268,7 +275,11 @@ def train_model(model,
             preds = torch.max(outputs, 1)[1]
             
             loss.backward()
-            # nn.utils.clip_grad_norm_(model.parameters(), 1)
+            
+            if epoch < 3:
+                nn.utils.clip_grad_norm_(model.parameters(), .1)
+            else:
+                nn.utils.clip_grad_norm_(model.parameters(), 1)
             
             optimizer.step()
             
@@ -342,8 +353,8 @@ def load_lids_model(model, lids_model_dir, architecture):
             weights = weights.transpose()
             weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
             
-            layer.mean_by_channel = torch.from_numpy(mean.reshape(1, -1, 1, 1)).float()
-            layer.std_by_channel = torch.from_numpy(std.reshape(1, -1, 1, 1)).float()
+            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
+            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
             
             layer._conv.weight = nn.Parameter(torch.from_numpy(weights).float())
     
@@ -353,24 +364,25 @@ def load_lids_model(model, lids_model_dir, architecture):
             if classifier_arch[name]['backpropagation']:
                 continue
         if isinstance(layer, SpecialLinearLayer):
-            weights = np.load(os.path.join(lids_model_dir,
-                                           f"{name}-train1.npy"))
-            weights = weights.transpose()
-            
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-mean.txt")) as f:
-                lines = f.readlines()
-                mean = np.array([float(line) for line in lines])
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-train1.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"{name}-train1.npy"))
+                weights = weights.transpose()
                 
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-stdev.txt")) as f:
-                lines = f.readlines()
-                std = np.array([float(line) for line in lines])
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-train1-mean.txt")) as f:
+                    lines = f.readlines()
+                    mean = np.array([float(line) for line in lines])
+                    
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-train1-stdev.txt")) as f:
+                    lines = f.readlines()
+                    std = np.array([float(line) for line in lines])
+                    
+                layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
+                layer.std = torch.from_numpy(std.reshape(1, -1)).float()
                 
-            layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
-            layer.std = torch.from_numpy(std.reshape(1, -1)).float()
-            
-            layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
+                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
                 
     return model
         

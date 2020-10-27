@@ -28,6 +28,7 @@ class LIDSConvNet(nn.Sequential):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self.feature_extractor = nn.Sequential()
+        self.features = self.feature_extractor
         self.classifier = nn.Sequential()
         self._remove_border = remove_boder
         self._logger = logging.getLogger()
