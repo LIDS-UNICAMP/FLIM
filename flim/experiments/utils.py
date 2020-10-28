@@ -19,6 +19,7 @@ import torch.optim as optim
 import torch.nn as nn
 
 from torchvision.models import vgg16_bn
+from torchvision.transforms import Resize
 
 from sklearn.metrics import f1_score, precision_recall_fscore_support, cohen_kappa_score, confusion_matrix
 from sklearn import svm
@@ -626,6 +627,64 @@ def split_dataset(dataset_dir, train_size, val_size=0, test_size=None, stratify=
                                                 stratify=test_labels)
 
     return train_split, val_split, test_split
+
+def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
+    model = model.to(device)
+    image = image.to(device)
+    
+    model.eval()
+    
+    gradients = []
+    features = []
+    
+    if image.dim() == 3:
+        x = image.unsqueeze(0)
+    else:
+        x = image
+        
+    for name, layer in model.features._modules.items():
+        print(name)
+        x = layer(x)
+        if name in target_layers:
+            x.register_hook(lambda grad : gradients.append(grad))
+            features.append(x)
+                
+
+    x = model.avgpool(x).flatten(1)
+    
+    y = model.classifier(x)
+    
+    one_hot = torch.zeros_like(y, device=device)
+    one_hot[0][class_label] = 1
+    one_hot = torch.sum(one_hot * y)
+    
+    model.zero_grad()
+    one_hot.backward()
+    
+    weights = torch.mean(gradients[-1], axis=(2,3))[0, :]
+    target = features[-1][0].detach()
+    
+    cam = torch.zeros_like(target[0])
+    
+    for i, w in enumerate(weights):
+        cam += w * target[i, :, ]
+        
+    cam[cam < 0] = 0.0
+    print(cam.shape)
+    print(image.shape)
+    resize = Resize(image.shape[1:])
+    
+    cam = resize(cam.unsqueeze(0))
+    cam = cam - cam.min()
+    cam = cam/cam.max()
+    return cam.cpu().numpy()
+    
+    
+    
+
+        
+        
+            
 
 
     

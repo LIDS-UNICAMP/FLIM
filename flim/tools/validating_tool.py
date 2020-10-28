@@ -6,6 +6,10 @@ import torch
 from torch.nn.parallel.data_parallel import data_parallel
 import torchvision.transforms as transforms
 
+import matplotlib as mpl
+
+from skimage import io
+
 from ..experiments import utils
 
 def get_arguments():
@@ -56,6 +60,10 @@ def get_arguments():
                         help="Number of classes",
                         type=int)
     
+    parser.add_argument("--grad-cam",
+                        help="Compute grad-CAM",
+                        action="store_true")
+    
     args = parser.parse_args()
     
     return args
@@ -94,14 +102,24 @@ def main():
         
         model = utils.load_torchvision_model_weights(model, args.model_path)
         model.to(device)
-
-    if args.svm:
-        clf = utils.load_svm(args.svm_path)
-        utils.validate_svm(model, clf, dataset, device=device)
-    elif args.torchvision_model is not None or "classifier" in architecture:
-        utils.validate_model(model, dataset)
+    if args.grad_cam:
+        image = dataset[200][0]
+        cam = utils.compute_grad_cam(model, image, ["layer1"], dataset[200][1], device)
+        print(cam.shape)
+        color_map = mpl.cm.get_cmap('jet')
+        c_cam = color_map(cam)
+        print(c_cam.shape)
+        io.imsave("cmp.png", c_cam[0][:, :, :3] + image.permute(1,2,0).numpy())
+        
+        
     else:
-        print("No classifier to evaluate...")
+        if args.svm:
+            clf = utils.load_svm(args.svm_path)
+            utils.validate_svm(model, clf, dataset, device=device)
+        elif args.torchvision_model is not None or "classifier" in architecture:
+            utils.validate_model(model, dataset)
+        else:
+            print("No classifier to evaluate...")
 
 if __name__ == "__main__":
     main()
