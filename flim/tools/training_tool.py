@@ -1,4 +1,5 @@
 import argparse
+from ast import Str
 
 import os
 from os import access, makedirs
@@ -11,8 +12,11 @@ import numpy as np
 
 import torchvision.transforms as transforms
 
-from ..experiments import utils
+import matplotlib as mpl
 
+from skimage import io
+
+from ..experiments import utils
 
     
 def get_device(gpus):
@@ -142,6 +146,45 @@ def _handle_split(args):
         for filename in test_split:
             f.write(filename)
             f.write('\n')
+            
+def handle_explain(args):
+    device = get_device(args.gpus)
+
+    transform = transforms.Compose([transforms.ToTensor()])
+    dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
+    input_shape = list(dataset[0][0].permute(1, 2, 0).size())
+    
+    architecture = None
+    
+    if args.torchvision_model is None:
+        architecture = utils.load_architecture(args.architecture_dir)
+        model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border)
+    else:
+        model = utils.get_torchvision_model(args.torchvision_model,
+                                            args.number_classes,
+                                            pretrained=False,
+                                            device=device)
+        
+        
+        model = utils.load_torchvision_model_weights(model, args.model_path)
+        model.to(device)
+    image_indices = args.image_indices
+    
+    outputs_dir = os.path.join(args.outputs_dir, "CAMs")
+    if not os.path.exists(outputs_dir):
+        os.makedirs(outputs_dir)
+    
+    if image_indices is None:
+        image_indices = list(range(len(dataset)))
+        
+    for image_index in image_indices:  
+        image, label = dataset[image_index]
+        cam = utils.compute_grad_cam(model, image, args.target_layers, label, device)
+        color_map = mpl.cm.get_cmap('jet')
+        c_cam = color_map(cam)
+        image_name = dataset.images_names[image_index]
+        image = utils.image_to_rgb(image.permute(1,2,0))
+        io.imsave(os.path.join(outputs_dir, image_name), c_cam[0][:, :, :3] + image)
 
 def get_arguments():
     parser = argparse.ArgumentParser()
@@ -303,6 +346,63 @@ def get_arguments():
                               type=float)
 
     parser_split.set_defaults(func=_handle_split)
+    
+    parser_explain = subparsers.add_parser('explain',
+                                          help='Analyze model outputs.')
+    
+    parser_explain.add_argument('-d', '--dataset-dir',
+                        help="Dataset to train the mlp.",
+                        required=True)
+
+    parser_explain.add_argument('-ts', '--train-split',
+                        help="Split to train the mlp.",
+                        required=True)
+
+    parser_explain.add_argument("-ad", "--architecture-dir",
+                        help="Architecture dir")
+    
+    parser_explain.add_argument("-rb",
+                    "--remove-border",
+                    help="Remove border of size before classifier.",
+                    type=int,
+                    default=0)
+    
+    parser_explain.add_argument("-od", '--outputs-dir',
+                        help="Where to save outputs produced during traning such as ift datasets.",
+                        required=True)
+    
+    parser_explain.add_argument("-mp", "--model-path",
+                        help="Saved model path.",
+                        required=True)
+    
+    parser_explain.add_argument('-g', '--gpus',
+                        help='gpus to use',
+                        nargs='*',
+                        type=int)
+    
+    parser_explain.add_argument("-tm",
+                        "--torchvision-model",
+                        help="Torchvision model",
+                        choices=["vgg16_bn"],
+                        default=None)
+    
+    parser_explain.add_argument("-i",
+                                "--image-indices",
+                                help="Images to compute Grad-CAM. If none is passed, it will use all images.",
+                                nargs='*',
+                                type=int)
+    
+    parser_explain.add_argument("-t",
+                                "--target-layers",
+                                help="Target layers",
+                                nargs='*')
+    
+    parser_explain.add_argument("-nc",
+                        "--number-classes",
+                        help="Number of classes",
+                        type=int)
+    
+    parser_explain.set_defaults(func=handle_explain)
     
     args = parser.parse_args()
     args.func(args)

@@ -34,6 +34,8 @@ from termcolor import colored
 
 import math
 
+from skimage.color import lab2rgb
+
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer
 from ._dataset import LIDSDataset
 
@@ -42,6 +44,11 @@ def load_image(image_dir):
     image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
     return image
 
+
+def image_to_rgb(image):
+    image = image*(np.array([[116], [500], [200]])).reshape(1, 1, 3)
+    image = lab2rgb(image)
+    return image
 
 def load_markers(markers_dir):
     markers = []
@@ -641,18 +648,22 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
         x = image.unsqueeze(0)
     else:
         x = image
-        
-    for name, layer in model.features._modules.items():
-        print(name)
-        x = layer(x)
-        if name in target_layers:
-            x.register_hook(lambda grad : gradients.append(grad))
-            features.append(x)
-                
-
-    x = model.avgpool(x).flatten(1)
     
-    y = model.classifier(x)
+    for name, module in model._modules.items():        
+        if name == "features" or name == "feature_extractor":
+            for layer_name, layer in module.named_children():
+                x = layer(x)
+                if layer_name in target_layers:
+                    x.register_hook(lambda grad : gradients.append(grad))
+                    features.append(x)
+                    
+        elif name == "classifier":
+            x = x.flatten(1)
+            x = module(x)
+            
+        else:
+            x = module(x)
+    y = x
     
     one_hot = torch.zeros_like(y, device=device)
     one_hot[0][class_label] = 1
