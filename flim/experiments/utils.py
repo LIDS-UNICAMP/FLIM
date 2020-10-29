@@ -338,6 +338,7 @@ def load_torchvision_model_weights(model, weigths_path):
     
 
 def load_lids_model(model, lids_model_dir, architecture):
+    print("Loading LIDS model...")
     for name, layer in model.feature_extractor.named_children():
         print(name)
         if isinstance(layer, SpecialConvLayer):
@@ -357,7 +358,7 @@ def load_lids_model(model, lids_model_dir, architecture):
                                            f"{name}-train1-seeds-stdev.txt")) as f:
                 lines = f.readlines()[0]
                 std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
-            
+            print(weights.max())
             weights = weights.transpose()
             weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
             
