@@ -75,7 +75,7 @@ def get_device(gpus):
         device = torch.device('cpu')
     else:
         device = torch.device(gpus[0])
-
+    print(device)
     return device
 
 def main():

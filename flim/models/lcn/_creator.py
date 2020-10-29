@@ -385,7 +385,6 @@ class LCNCreator:
         cls_architecture = architecture['classifier']['layers']
 
         for key in cls_architecture:
-            print(key)
             layer_config = cls_architecture[key]
             
             operation = __operations__[layer_config['operation']]
@@ -393,7 +392,6 @@ class LCNCreator:
             
             if layer_config['operation'] == 'linear':
                 if operation_params['in_features'] == -1:
-                    print(self._output_shape)
                     operation_params['in_features'] = np.prod(self._output_shape)
 
                 if train_set is None and state_dict is not None:
@@ -424,7 +422,7 @@ class LCNCreator:
                 features = outputs.numpy()
 
             classifier.add_module(key, layer)
-        print("Initialize")
+
         #initialization
         if features is None:
             for m in classifier.modules():

@@ -49,11 +49,10 @@ class SpecialLinearLayer(nn.Module):
             
             weights = torch.rand(self.in_features,
                                          self.out_features).numpy().transpose()
-        print("features", features)
         self.in_features = weights.shape[1]
         self.out_features = weights.shape[0]
 
-        print(self.in_features)
+
         self._linear = nn.Linear(self.in_features, self.out_features, bias=self.bias)
         self._linear.weight = nn.Parameter(torch.Tensor(weights))
     
@@ -68,7 +67,7 @@ class SpecialLinearLayer(nn.Module):
             torch.from_numpy(std).float().to(self.device)
         
         patches = (patches - mean)/std
-        print("roots")
+
         weights = _kmeans_roots(patches,
                                 labels,
                                 kernels_per_label)
