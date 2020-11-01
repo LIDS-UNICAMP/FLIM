@@ -67,7 +67,7 @@ class SpecialConvLayer(nn.Module):
                  stride=1,
                  bias=False,
                  dilation=1,
-                 number_of_kernels_per_marker=16,
+                 number_of_kernels_per_marker=None,
                  activation_config=None,
                  pool_config=None,
                  device='cpu'):
@@ -113,7 +113,10 @@ class SpecialConvLayer(nn.Module):
         self._pool_config = pool_config
         
         self.number_of_kernels_per_marker = number_of_kernels_per_marker
-
+        
+        if number_of_kernels_per_marker is not None:
+            self.out_channels = number_of_kernels_per_marker
+        print(self.out_channels)
         self._conv = None
         self._activation = None
         self._pool = None
@@ -123,9 +126,6 @@ class SpecialConvLayer(nn.Module):
         
         #self.mean_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
         #self.std_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
-        
-        self.register_parameter('mean_by_channel', nn.Parameter(torch.zeros(1, self.in_channels, 1, 1)))
-        self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, self.in_channels, 1, 1)))
         
         self.device = device
         
@@ -158,7 +158,7 @@ class SpecialConvLayer(nn.Module):
                                          self.kernel_size,
                                          self.kernel_size,
                                          self.in_channels).numpy()
-
+        
         self.out_channels = kernels_weights.shape[0]
 
         self._conv = Conv2d(self.in_channels,
@@ -386,14 +386,6 @@ class SpecialConvLayer(nn.Module):
         """
         super(SpecialConvLayer, self).to()
         
-        self.mean_by_channel = nn.Parameter(self.mean_by_channel.to(device))
-        self.std_by_channel = nn.Parameter(self.std_by_channel.to(device))
-        
-        print("parameter", self.mean_by_channel.device)
-        
-        #self.mean_by_channel.to(device)
-        #self.std_by_channel.to(device)
-        
         self._conv = self._conv.to(device)
 
         self.device = device
@@ -427,14 +419,10 @@ class SpecialConvLayer(nn.Module):
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
 
-        mean = self.mean_by_channel
-        std = self.std_by_channel
-        
-        x = (x - mean)/std
+        print(x.size())
         
         y = self._conv(x)
 
-        
         if self._activation is not None:
             y = self._activation.forward(y)
         
@@ -625,7 +613,6 @@ def _kmeans_roots(patches,
             roots = np.concatenate((roots, roots_of_label))
         else:
             roots = roots_of_label
-    
     roots = roots.reshape(-1, *patches.shape[1:])
     return roots
 

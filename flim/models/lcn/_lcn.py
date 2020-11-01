@@ -60,7 +60,7 @@ class LIDSConvNet(nn.Sequential):
         
         if b > 0:
             x = x[:,:, b:-b, b:-b]
-            
+        
         x = x.flatten(1)
         
         _y = self.classifier(x)

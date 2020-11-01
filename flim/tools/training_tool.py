@@ -61,7 +61,7 @@ def _handle_train(args):
     if args.torchvision_model is None:  
         architecture = utils.load_architecture(args.architecture_dir)
         
-    if not args.load_lids_model and not args.backpropagation and not args.torchvision_model:
+    if not args.load_lids_model and not args.torchvision_model:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
         images, markers = None, None
@@ -74,7 +74,7 @@ def _handle_train(args):
     
     print(input_shape)
 
-    if architecture is not None and not args.load_lids_model and not args.backpropagation:
+    if architecture is not None and not args.load_lids_model:
         model = utils.build_model(architecture,
                                 images,
                                 markers,
