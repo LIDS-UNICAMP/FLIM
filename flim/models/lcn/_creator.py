@@ -328,6 +328,12 @@ class LCNCreator:
                     
                     layer = operation(**operation_params)
                     
+                elif layer_config['operation'] == "adap_avg_pool2d":
+                    output_shape[0] = operation_params['output_size'][0]
+                    output_shape[1] = operation_params['output_size'][1]
+                    
+                    layer = operation(**operation_params)
+                    
                 elif layer_config['operation'] == "unfold":
                     layer = operation(**operation_params)
                     
@@ -373,9 +379,15 @@ class LCNCreator:
         
         architecture = self._architecture
 
+
+        assert "classifier" in architecture, \
+            "Achitecture does not specify a classifier"
+            
         features = None
         all_labels = None
-        '''if train_set is not None:
+        use_backpropagation = 'backpropagation' in architecture['classifier'] and architecture['classifier']['backpropagation']
+        
+        if train_set is not None and not use_backpropagation:
             loader = DataLoader(train_set, self._batch_size, shuffle=False)
             for inputs, labels in loader:
                 inputs = inputs.to(self.device)
@@ -390,11 +402,7 @@ class LCNCreator:
                     all_labels = torch.cat((all_labels, labels))
         
             features = features.numpy()
-            all_labels.numpy()'''
-
-
-        assert "classifier" in architecture, \
-            "Achitecture does not specify a classifier"
+            all_labels.numpy()
 
         cls_architecture = architecture['classifier']['layers']
 

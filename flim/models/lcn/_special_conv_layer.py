@@ -583,8 +583,7 @@ def _kmeans_roots(patches,
     min_number_of_pacthes_per_label = n_clusters_per_label
 
     possible_labels = np.unique(labels)
-    print(possible_labels)
-    print(patches.shape)
+
     for label in possible_labels:
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
