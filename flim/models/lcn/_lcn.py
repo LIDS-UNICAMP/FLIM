@@ -53,7 +53,7 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
-        for _, layer in self.feature_extractor.named_children():
+        for layer_name, layer in self.feature_extractor.named_children():
             _y = layer.forward(x)
             x = _y
         b = self._remove_border

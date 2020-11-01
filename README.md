@@ -151,7 +151,7 @@ The available tools are `train` and` validate`. For a description of the paramet
 Following, there are usage examples for each tool:
 
 ```
-train -d lids-dataset -s train_split.txt -a arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
+train train -d lids-dataset -s train_split.txt -a arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
 ```
 
 ```
