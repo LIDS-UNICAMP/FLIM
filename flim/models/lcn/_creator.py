@@ -4,6 +4,7 @@ import math
 
 import torch
 import torch.nn as nn
+from torch import functional
 from torch.utils.data import DataLoader
 
 import numpy as np
@@ -283,8 +284,11 @@ class LCNCreator:
                         output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         
-                        # output_shape[0] = output_shape[0]//stride
-                        # output_shape[1] = output_shape[1]//stride
+                        markers = functional.F.max_pool2d(torch.from_numpy(markers).float().unsqueeze(0), 
+                                                          kernel_size=kernel_size,
+                                                          stride=kernel_size).squeeze().numpy()
+
+                        
                     operation_params['in_channels'] = last_conv_layer_out_channels
                     layer = operation(**operation_params,
                                       activation_config=activation_config,
