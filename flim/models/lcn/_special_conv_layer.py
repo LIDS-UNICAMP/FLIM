@@ -111,7 +111,6 @@ class SpecialConvLayer(nn.Module):
     
         self._activation_config = activation_config
         self._pool_config = pool_config
-        
         self.number_of_kernels_per_marker = number_of_kernels_per_marker
         
         if number_of_kernels_per_marker is not None:
@@ -419,7 +418,7 @@ class SpecialConvLayer(nn.Module):
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
 
-        print(x.size())
+        # print(x.size())
         
         y = self._conv(x)
 
@@ -460,15 +459,6 @@ class SpecialConvLayer(nn.Module):
                                                  self.kernel_size,
                                                  self.in_channels)
 
-        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
-        
-        self.mean_by_channel = \
-            torch.from_numpy(mean_by_channel).float().to(self.device)
-        self.std_by_channel = \
-            torch.from_numpy(std_by_channel).float().to(self.device)
-        
-        patches = (patches - mean_by_channel)/std_by_channel
 
         kernel_weights = _kmeans_roots(patches,
                                        labels,
@@ -591,7 +581,7 @@ def _kmeans_roots(patches,
     min_number_of_pacthes_per_label = n_clusters_per_label
 
     possible_labels = np.unique(labels)
-    
+
     for label in possible_labels:
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.

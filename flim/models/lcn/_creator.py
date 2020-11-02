@@ -305,12 +305,32 @@ class LCNCreator:
                 elif layer_config['operation'] == "batch_norm2d":
                     layer = operation(
                         num_features=last_conv_layer_out_channels)
+                    layer.train()
+                    layer = layer.to(device)
+                    if images is not None and markers is not None:    
+                        torch_images = torch.Tensor(images)
+
+                        torch_images = torch_images.permute(0, 3, 1, 2)
+                        
+                        input_size = torch_images.size(0)
+                        
+                        for i in range(0, input_size, batch_size):
+                            batch = torch_images[i: i+batch_size]
+                            output = layer.forward(batch.to(device))
+                        
+                    layer.eval()
                     
                 elif layer_config['operation'] == "max_pool2d":
                     stride = operation_params['stride']
 
                     output_shape[0] = output_shape[0]//stride
                     output_shape[1] = output_shape[1]//stride
+                    
+                    layer = operation(**operation_params)
+                    
+                elif layer_config['operation'] == "adap_avg_pool2d":
+                    output_shape[0] = operation_params['output_size'][0]
+                    output_shape[1] = operation_params['output_size'][1]
                     
                     layer = operation(**operation_params)
                     
@@ -339,7 +359,7 @@ class LCNCreator:
                             
                         images = outputs.permute(0, 2, 3, 1).detach().numpy()
                         # output_shape = list(images.shape)
-        
+                layer.train()
                 module.add_module(key, layer)
         output_shape[2] = last_conv_layer_out_channels
         self._output_shape = output_shape
@@ -359,9 +379,15 @@ class LCNCreator:
         
         architecture = self._architecture
 
+
+        assert "classifier" in architecture, \
+            "Achitecture does not specify a classifier"
+            
         features = None
         all_labels = None
-        if train_set is not None:
+        use_backpropagation = 'backpropagation' in architecture['classifier'] and architecture['classifier']['backpropagation']
+        
+        if train_set is not None and not use_backpropagation:
             loader = DataLoader(train_set, self._batch_size, shuffle=False)
             for inputs, labels in loader:
                 inputs = inputs.to(self.device)
@@ -378,10 +404,6 @@ class LCNCreator:
             features = features.numpy()
             all_labels.numpy()
 
-
-        assert "classifier" in architecture, \
-            "Achitecture does not specify a classifier"
-
         cls_architecture = architecture['classifier']['layers']
 
         for key in cls_architecture:
@@ -393,7 +415,6 @@ class LCNCreator:
             if layer_config['operation'] == 'linear':
                 if operation_params['in_features'] == -1:
                     operation_params['in_features'] = np.prod(self._output_shape)
-
                 if train_set is None and state_dict is not None:
                     weights = state_dict[f'classifier.{key}._linear.weight']
                     operation_params['in_features'] = weights.shape[1]
