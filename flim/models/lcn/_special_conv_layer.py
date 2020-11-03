@@ -579,7 +579,7 @@ def _kmeans_roots(patches,
     """
     roots = None
     min_number_of_pacthes_per_label = n_clusters_per_label
-
+    print("Patches", patches.shape[0])
     possible_labels = np.unique(labels)
 
     for label in possible_labels:

@@ -284,9 +284,11 @@ class LCNCreator:
                         output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         
-                        markers = functional.F.max_pool2d(torch.from_numpy(markers).float().unsqueeze(0), 
-                                                          kernel_size=kernel_size,
-                                                          stride=kernel_size).squeeze().numpy()
+                        # markers = functional.F.max_pool2d(torch.from_numpy(markers).float().unsqueeze(0), 
+                        #                                   kernel_size=kernel_size,
+                        #                                   stride=kernel_size).squeeze().numpy()
+                        
+                        _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
 
                         
                     operation_params['in_channels'] = last_conv_layer_out_channels
@@ -640,3 +642,21 @@ def _assert_params(params):
     
     if 'params' not in params:
         raise AssertionError('Layer does not have operation params.')
+    
+
+def _pooling_markers(markers, kernel_size, stride=1, padding=0):
+    new_markers = []
+    for marker in markers:
+      indices_x, indices_y = np.where(marker != 0)
+
+      new_marker = np.zeros((marker.shape[0]//stride, marker.shape[1]//stride), dtype=np.int)
+      x_limit = marker.shape[0] + 2*padding - kernel_size[0]
+      y_limit = marker.shape[1] + 2*padding - kernel_size[1]
+      for x, y in zip(indices_x, indices_y):
+          if x > x_limit or y > y_limit:
+            continue
+          new_marker[x//stride][y//stride] = markers[x][y]
+
+      new_markers.append(new_marker)
+
+    return new_markers
