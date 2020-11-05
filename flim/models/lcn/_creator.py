@@ -288,7 +288,7 @@ class LCNCreator:
                         #                                   kernel_size=kernel_size,
                         #                                   stride=kernel_size).squeeze().numpy()
                         
-                        _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
 
                         
                     operation_params['in_channels'] = last_conv_layer_out_channels
@@ -655,7 +655,7 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
       for x, y in zip(indices_x, indices_y):
           if x > x_limit or y > y_limit:
             continue
-          new_marker[x//stride][y//stride] = markers[x][y]
+          new_marker[x//stride][y//stride] = marker[x][y]
 
       new_markers.append(new_marker)
 
