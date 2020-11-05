@@ -9,7 +9,13 @@ from PIL import Image
 from skimage import io
 from skimage import util
 
+from numba import jit
+
 from os import path
+
+import pyift.pyift as ift
+
+import torch
 
 def get_arguments():
     parser = argparse.ArgumentParser()
@@ -20,6 +26,12 @@ def get_arguments():
                         '--markers',
                         help="Image markers for the the segmentation.",
                         default=None)
+
+    parser.add_argument('-ns',
+                        '--n-superpixels',
+                        help="The number of superpixels",
+                        type=int,
+                        default=0)
 
     args = parser.parse_args()
 
@@ -66,22 +78,115 @@ def save_markers(markers, markers_dir):
         for x, y in zip(x_coords, y_coords):
             f.write(f"{y} {x} {-1} {markers[x][y]}\n")
 
+def image_to_ift_mimage(image):
+    assert isinstance(image, (np.ndarray, torch.Tensor)), "image must me a numpy array or a torch Tensor"
+
+    if isinstance(image, torch.Tensor):
+        image = image.numpy()
+
+    assert image.ndim == 3, "image must have shape (H, W, C)"
+
+    image = np.ascontiguousarray(image)
+
+    image = ift.CreateMImageFromNumPy(image.astype(np.float32))
+
+    return image
+    
+
+def get_superpixels_of_image(image, n_superpixels):
+    assert isinstance(image, (np.ndarray, torch.Tensor)), "image must me a numpy array or a torch Tensor"
+    assert n_superpixels > 0, "number of superpixels must be positive"
+
+    ift_mimage = image_to_ift_mimage(image)
+    
+    adj = ift.Circular(1.0)
+
+    mask = ift.SelectImageDomain(ift_mimage.xsize, ift_mimage.ysize, ift_mimage.zsize)
+
+    igraph = ift.ImplicitIGraph(ift_mimage, mask, adj)
+    seeds = ift.GridSampling(ift_mimage, mask, n_superpixels)
+
+    ift.IGraphISF_Root(igraph, seeds, 0.5, 12, niters=1000)
+
+    labels = ift.IGraphLabel(igraph)
+
+    roots = ift.IGraphRoot(igraph)
+
+    return labels.AsNumPy(), roots.AsNumPy()
+
+def get_superpixels_centers(superpixels):
+    center = np.full((superpixels.max() + 1, 2), 0)
+    
+    for i in range(1, superpixels.max()+1):
+        mask = superpixels == i
+        center[i] = np.round(np.argwhere(mask).mean(axis=0))
+    
+    return center
+
+
+def get_superpixels_roots(superpixels, root_image):
+    indices = np.arange(0, root_image.shape[0]*root_image.shape[1]).reshape(root_image.shape)
+
+    roots = np.argwhere(root_image == indices)
+
+    return roots
+
+def get_markers_from_superpixels(image):
+    superpixels, root_image = get_superpixels_of_image(image, n_superpixels=500)
+    centers = get_superpixels_roots(superpixels, root_image)
+    image_markers = np.zeros((image.shape[0:2]))
+    image_markers[centers[:, 0], centers[:, 1]] = 1
+
+    return image_markers.astype(np.int)
+
+@jit
+def turn_superpixels_in_markers(image, superpixels, markers):
+    new_markers = np.zeros_like(markers)
+
+    labels = np.unique(superpixels)
+
+    markers_mask = markers != 0
+
+    for label in labels:
+        superpixel_mask = superpixels == label
+        flag = np.any(np.logical_and(markers_mask, superpixel_mask))
+        marker_label = markers_mask[superpixel_mask].max()
+
+        new_markers[superpixel_mask] = marker_label
+
+    
+    return new_markers
+
+
+
 def create_viewer(image_dir,
                   markers_dir=None,
+                  n_superpixels=1000,
                   ):
 
     image = load_image(image_dir)
     initial = np.zeros(image.shape[:2], dtype=np.int)
+    if n_superpixels > 0:
+        super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
+    else:
+        super_pixels = None
 
     if markers_dir is not None:
         markers = load_label_image(markers_dir)
     else:
         markers = initial
 
+    if super_pixels is not None and markers.max() > 0:
+        markers = turn_superpixels_in_markers(image, super_pixels, markers)
+
     with napari.gui_qt():
 
         viewer = napari.Viewer(title="Interative tool. I hate my life.")
         viewer.add_image(image, name="image")
+
+        if super_pixels is not None:
+            viewer.add_labels(super_pixels, name='super pixels', opacity=0.5)
+
         viewer.add_labels(markers, name='markers', opacity=1)
 
         @viewer.bind_key('r')
@@ -101,15 +206,13 @@ def create_viewer(image_dir,
                 markers_dir = image_dir.split('.')[0] + ".txt"
             save_markers(markers, markers_dir)
 
-            
-
-
 
 def main():
     args  = get_arguments()
     create_viewer(
         args.image,
-        args.markers)
+        args.markers,
+        args.n_superpixels)
 
 if __name__ == "__main__":
     main()
