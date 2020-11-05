@@ -145,7 +145,7 @@ def get_markers_from_superpixels(image):
     return image_markers.astype(np.int)
 
 @jit
-def turn_superpixels_in_markers(image, superpixels, markers):
+def turn_superpixels_in_markers(superpixels, markers):
     new_markers = np.zeros_like(markers)
 
     labels = np.unique(superpixels)
@@ -154,7 +154,7 @@ def turn_superpixels_in_markers(image, superpixels, markers):
 
     for label in labels:
         superpixel_mask = superpixels == label
-        flag = np.any(np.logical_and(markers_mask, superpixel_mask))
+        # flag = np.any(np.logical_and(markers_mask, superpixel_mask))
         marker_label = markers_mask[superpixel_mask].max()
 
         new_markers[superpixel_mask] = marker_label
@@ -182,7 +182,7 @@ def create_viewer(image_dir,
         markers = initial
 
     if super_pixels is not None and markers.max() > 0:
-        markers = turn_superpixels_in_markers(image, super_pixels, markers)
+        markers = turn_superpixels_in_markers(super_pixels, markers)
 
     with napari.gui_qt():
 
@@ -218,8 +218,18 @@ def create_viewer(image_dir,
 
         
         @magicgui(
+            call_button="Propagate markers"
+        )
+        def propagate_markers():
+            super_pixels = viewer.layers['superpixels'].data
+            markers = viewer.layers['markers'].data
+            new_markers = turn_superpixels_in_markers(super_pixels, markers)
+            viewer.layers['markers'].data = new_markers
+
+        
+        @magicgui(
             call_button="Compute superpixels",
-            n_superpixels={"widget_type": QDoubleSlider, "maximum": 5000, "fixedWidth": 400,  'singleStep': 1},
+            n_superpixels={"widget_type": QDoubleSlider, "maximum": 5000,  'singleStep': 1},
         )
         def compute_superpixels(n_superpixels=0):
             n_superpixels = math.floor(n_superpixels)
@@ -228,11 +238,15 @@ def create_viewer(image_dir,
                 super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
                 viewer.layers['superpixels'].data = super_pixels
   
-        compute_superpixels_gui = compute_superpixels.Gui()
-        viewer.window.add_dock_widget(compute_superpixels_gui, area="bottom")
+        compute_superpixels_button = compute_superpixels.Gui()
+        viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
 
-        save_markers_gui = save_markers.Gui()
-        viewer.window.add_dock_widget(save_markers_gui, area="bottom")
+        propagate_markers_button = propagate_markers.Gui()
+        viewer.window.add_dock_widget(propagate_markers_button, area="bottom")
+
+        save_markers_button = save_markers.Gui()
+        viewer.window.add_dock_widget(save_markers_button, area="bottom")
+    
 
 def main():
     args  = get_arguments()
