@@ -8,6 +8,7 @@ from PIL import Image
 
 from skimage import io
 from skimage import util
+from skimage.segmentation import find_boundaries
 
 from magicgui import magicgui
 from magicgui._qt.widgets import QDoubleSlider
@@ -17,6 +18,7 @@ from numba import jit
 from os import path
 
 import pyift.pyift as ift
+from skimage.segmentation import boundaries
 
 import torch
 
@@ -183,6 +185,9 @@ def create_viewer(image_dir,
 
     if super_pixels is not None and markers.max() > 0:
         markers = turn_superpixels_in_markers(image, super_pixels, markers)
+    
+    else:
+        super_pixels = initial
 
     with napari.gui_qt():
 
@@ -190,9 +195,13 @@ def create_viewer(image_dir,
         viewer.add_image(image, name="image")
 
         if super_pixels is not None:
-            viewer.add_labels(super_pixels, name='superpixels', opacity=0.5)
+            boundaries = find_boundaries(super_pixels,
+                                         connectivity=2,
+                                         mode="inner").astype(np.int)
+            boundaries[boundaries != 0] = 9
+            viewer.add_labels(boundaries, name='superpixels', opacity=1)
         else:
-            viewer.add_labels(initial, name='superpixels', opacity=0.5)
+            viewer.add_labels(initial, name='superpixels', opacity=1)
 
         viewer.add_labels(markers, name='markers', opacity=1)
 
@@ -226,7 +235,12 @@ def create_viewer(image_dir,
             if n_superpixels > 0:
                 print(n_superpixels)
                 super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
-                viewer.layers['superpixels'].data = super_pixels
+                boundaries = find_boundaries(super_pixels,
+                                             connectivity=1,
+                                             mode="inner").astype(np.int)
+                boundaries[boundaries != 0] = 9
+                print(boundaries.max())
+                viewer.layers['superpixels'].data = boundaries
   
         compute_superpixels_gui = compute_superpixels.Gui()
         viewer.window.add_dock_widget(compute_superpixels_gui, area="bottom")
