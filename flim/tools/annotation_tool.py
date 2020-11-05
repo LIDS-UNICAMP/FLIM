@@ -13,6 +13,12 @@ from skimage.segmentation import find_boundaries
 from magicgui import magicgui
 from magicgui._qt.widgets import QDoubleSlider
 
+from contextlib import contextmanager
+
+from PySide2.QtWidgets import QApplication
+from PySide2.QtGui import QCursor
+from PySide2.QtCore import Qt
+
 from numba import jit, njit
 
 from os import path
@@ -164,7 +170,13 @@ def turn_superpixels_in_markers(superpixels, markers):
     
     return new_markers
 
-
+@contextmanager
+def wait_cursor():
+    try:
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
 
 def create_viewer(image_dir,
                   markers_dir=None,
@@ -223,7 +235,8 @@ def create_viewer(image_dir,
 
             if markers_dir is not None:
                 markers_dir = image_dir.split('.')[0] + ".txt"
-            _save_markers(markers, markers_dir)
+            with wait_cursor(): 
+                _save_markers(markers, markers_dir)
             print("Markers saved.")
 
         
@@ -243,15 +256,16 @@ def create_viewer(image_dir,
         def compute_superpixels(n_superpixels=0):
             nonlocal super_pixels
             n_superpixels = math.floor(n_superpixels)
-            if n_superpixels > 0:
-                print(n_superpixels)
-                super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
-                boundaries = find_boundaries(super_pixels,
-                                             connectivity=1,
-                                             mode="inner").astype(np.int)
-                boundaries[boundaries != 0] = 9
-                print(boundaries.max())
-                viewer.layers['superpixels'].data = boundaries
+            with wait_cursor(): 
+                if n_superpixels > 0:
+                    print(n_superpixels)
+                    super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
+                    boundaries = find_boundaries(super_pixels,
+                                                connectivity=1,
+                                                mode="inner").astype(np.int)
+                    boundaries[boundaries != 0] = 9
+                    print(boundaries.max())
+                    viewer.layers['superpixels'].data = boundaries
   
         compute_superpixels_button = compute_superpixels.Gui()
         viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
