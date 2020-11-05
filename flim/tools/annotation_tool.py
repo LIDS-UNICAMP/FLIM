@@ -9,6 +9,9 @@ from PIL import Image
 from skimage import io
 from skimage import util
 
+from magicgui import magicgui
+from magicgui._qt.widgets import QDoubleSlider
+
 from numba import jit
 
 from os import path
@@ -16,6 +19,8 @@ from os import path
 import pyift.pyift as ift
 
 import torch
+
+import math
 
 def get_arguments():
     parser = argparse.ArgumentParser()
@@ -64,7 +69,7 @@ def load_image(image_dir):
 
     return image
 
-def save_markers(markers, markers_dir):
+def _save_markers(markers, markers_dir):
     markers = markers.astype(np.int)
     mask = markers != 0
     
@@ -185,7 +190,9 @@ def create_viewer(image_dir,
         viewer.add_image(image, name="image")
 
         if super_pixels is not None:
-            viewer.add_labels(super_pixels, name='super pixels', opacity=0.5)
+            viewer.add_labels(super_pixels, name='superpixels', opacity=0.5)
+        else:
+            viewer.add_labels(initial, name='superpixels', opacity=0.5)
 
         viewer.add_labels(markers, name='markers', opacity=1)
 
@@ -196,16 +203,36 @@ def create_viewer(image_dir,
             # viewer.layers['instability map'].data = initial
 
         
-        @viewer.bind_key('s')
-        def write_segmentation(viewer):
+        @magicgui(
+            call_button="Save markers"
+        )
+        def save_markers():
             print("Saving markers...")
             nonlocal markers_dir
             markers = viewer.layers['markers'].data
 
             if markers_dir is not None:
                 markers_dir = image_dir.split('.')[0] + ".txt"
-            save_markers(markers, markers_dir)
+            _save_markers(markers, markers_dir)
+            print("Markers saved.")
 
+        
+        @magicgui(
+            call_button="Compute superpixels",
+            n_superpixels={"widget_type": QDoubleSlider, "maximum": 5000, "fixedWidth": 400,  'singleStep': 1},
+        )
+        def compute_superpixels(n_superpixels=0):
+            n_superpixels = math.floor(n_superpixels)
+            if n_superpixels > 0:
+                print(n_superpixels)
+                super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
+                viewer.layers['superpixels'].data = super_pixels
+  
+        compute_superpixels_gui = compute_superpixels.Gui()
+        viewer.window.add_dock_widget(compute_superpixels_gui, area="bottom")
+
+        save_markers_gui = save_markers.Gui()
+        viewer.window.add_dock_widget(save_markers_gui, area="bottom")
 
 def main():
     args  = get_arguments()
