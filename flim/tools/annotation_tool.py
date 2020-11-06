@@ -233,7 +233,7 @@ def create_viewer(image_dir,
             nonlocal markers_dir
             markers = viewer.layers['markers'].data
 
-            if markers_dir is not None:
+            if markers_dir is None:
                 markers_dir = image_dir.split('.')[0] + ".txt"
             with wait_cursor(): 
                 _save_markers(markers, markers_dir)
