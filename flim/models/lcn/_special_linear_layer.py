@@ -66,7 +66,7 @@ class SpecialLinearLayer(nn.Module):
         self.std = \
             torch.from_numpy(std).float().to(self.device)
         
-        patches = (patches - mean)/std
+        patches = (patches - mean)/(std + 0.00001)
         
         weights = _kmeans_roots(patches,
                                 labels,

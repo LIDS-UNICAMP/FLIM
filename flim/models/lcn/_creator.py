@@ -288,7 +288,8 @@ class LCNCreator:
                         #                                   kernel_size=kernel_size,
                         #                                   stride=kernel_size).squeeze().numpy()
                         
-                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                        if markers:
+                            markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
 
                         
                     operation_params['in_channels'] = last_conv_layer_out_channels
@@ -395,9 +396,9 @@ class LCNCreator:
         
         if train_set is not None and not use_backpropagation:
             loader = DataLoader(train_set, self._batch_size, shuffle=False)
+            model = model.to(self.device)
             for inputs, labels in loader:
                 inputs = inputs.to(self.device)
-
                 outputs = model.feature_extractor(inputs).detach().cpu().flatten(1)
 
                 if features is None:
