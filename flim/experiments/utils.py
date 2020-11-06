@@ -477,7 +477,7 @@ def train_svm(model, train_set, batch_size=32, device='cpu'):
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model.features(inputs).detach()
+        outputs = model.feature_extractor(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
