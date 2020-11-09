@@ -10,6 +10,7 @@ import numpy as np
 from skimage.util import view_as_windows, pad
 
 from sklearn.cluster import MiniBatchKMeans
+from sklearn.decomposition import PCA
 
 from scipy.spatial import distance
 
@@ -68,6 +69,7 @@ class SpecialConvLayer(nn.Module):
                  bias=False,
                  dilation=1,
                  number_of_kernels_per_marker=16,
+                 use_random_kernels=False,
                  activation_config=None,
                  pool_config=None,
                  device='cpu'):
@@ -116,6 +118,8 @@ class SpecialConvLayer(nn.Module):
         self._conv = None
         self._activation = None
         self._pool = None
+        
+        self._use_random_kernels = use_random_kernels
 
         #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
         #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
@@ -150,13 +154,20 @@ class SpecialConvLayer(nn.Module):
             this argument is ignored. 
 
         """
-        if images is not None and markers is not None:
+        if self._use_random_kernels:
+            kernels_weights = _create_random_pca_kernels(n=self.number_of_kernels_per_marker * 1000,
+                                                         k=self.number_of_kernels_per_marker,
+                                                         in_channels=self.in_channels,
+                                                         kernel_size=self.kernel_size)
+            
+        elif images is not None and markers is not None:
             kernels_weights = self._calculate_weights(images, markers)
+            kernels_weights = np.rollaxis(kernels_weights, 3, 1)
         else:
             kernels_weights = torch.rand(kernels_number,
+                                         self.in_channels,
                                          self.kernel_size,
-                                         self.kernel_size,
-                                         self.in_channels).numpy()
+                                         self.kernel_size).numpy()
 
         self.out_channels = kernels_weights.shape[0]
 
@@ -168,8 +179,7 @@ class SpecialConvLayer(nn.Module):
                             padding=self.padding,
                             dilation=self.dilation)
 
-        self._conv.weight = nn.Parameter(
-            torch.Tensor(np.rollaxis(kernels_weights, 3, 1)))
+        self._conv.weight = nn.Parameter(torch.Tensor(kernels_weights))
 
         self._conv.weight.requires_grad = False
         
@@ -633,3 +643,49 @@ def _compute_similarity_matrix(filters):
     similiraty_matrix = distance.pdist(_filters, metric=np.inner)
 
     return distance.squareform(similiraty_matrix)
+
+
+def _create_random_kernels(n ,in_channels, kernel_size):
+    kernels = np.random.rand(n, in_channels, *kernel_size)
+
+    return kernels
+
+def _enforce_norm(kernels):
+    kernels_shape = kernels.shape
+    flattened_kernels = kernels.reshape(kernels_shape[0], -1)
+
+    norm = np.linalg.norm(flattened_kernels, axis=1, keepdims=True)
+
+    normalized = flattened_kernels/norm
+
+    mean = normalized.mean(axis=1, keepdims=True)
+
+    centered = normalized - mean
+
+    centered = centered.reshape(*kernels_shape)
+
+    return centered
+
+def _create_random_pca_kernels(n, k, in_channels, kernel_size):
+
+    if isinstance(kernel_size, int):
+      kernel_size = [kernel_size]*2
+    elif isinstance(kernel_size, list) and len(kernel_size) == 1:
+      kernel_size = kernel_size*2
+
+    kernels = _enforce_norm(_create_random_kernels(n, in_channels, kernel_size))
+
+    kernels_shape = kernels.shape
+
+    kernels_flatted = kernels.reshape(kernels_shape[0], -1)
+    if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
+        k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
+
+    pca = PCA(n_components=k)
+    pca.fit(kernels_flatted)
+
+    kernels_pca = pca.components_
+
+    kernels_pca = kernels_pca.reshape(-1, *kernels_shape[1:])
+
+    return kernels_pca
