@@ -466,8 +466,8 @@ def validate_model(model,
     print("Calculating metrics...")
     _calulate_metrics(true_labels, pred_labels)
 
-def train_svm(model, train_set, batch_size=32, device='cpu'):
-    clf = svm.LinearSVC(max_iter=200000)
+def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
+    clf = svm.LinearSVC(max_iter=max_iter)
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
     model.eval()
