@@ -227,7 +227,7 @@ class LCNCreator:
 
         for key in layers_arch:
             layer_config = layers_arch[key]
-
+            print(f"Building {key}")
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
                                                                            images,
@@ -326,12 +326,18 @@ class LCNCreator:
                     
                 elif layer_config['operation'] == "max_pool2d":
                     stride = operation_params['stride']
-                    padding = operation_params['padding']
                     kernel_size = operation_params['kernel_size']
                     
+                    if 'padding' in operation_params:
+                        padding = operation_params['padding']
+                    else:
+                        padding = 0
                     
                     output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
                     output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    
+                    if markers is not None:
+                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
                     
                     layer = operation(**operation_params)
                     
