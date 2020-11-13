@@ -204,7 +204,7 @@ def create_viewer(image_dir,
 
     with napari.gui_qt():
 
-        viewer = napari.Viewer(title="Interative tool. I hate my life.")
+        viewer = napari.Viewer(title="Interative tool.")
         viewer.add_image(image, name="image")
 
         if super_pixels is not None:
