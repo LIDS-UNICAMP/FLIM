@@ -227,7 +227,7 @@ class LCNCreator:
 
         for key in layers_arch:
             layer_config = layers_arch[key]
-
+            print(f"Building {key}")
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
                                                                            images,
@@ -283,9 +283,13 @@ class LCNCreator:
                         output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         
-                        # output_shape[0] = output_shape[0]//stride
-                        # output_shape[1] = output_shape[1]//stride
+                        if markers is not None:
+                            markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
                     operation_params['in_channels'] = last_conv_layer_out_channels
+                    
+                    if markers is not None and "number_of_kernels_per_marker" not in operation_params:
+                        operation_params["number_of_kernels_per_marker"] = operation_params["out_channels"]//np.array(markers).max()
+                        
                     layer = operation(**operation_params,
                                       activation_config=activation_config,
                                       pool_config=pool_config)
@@ -322,9 +326,24 @@ class LCNCreator:
                     
                 elif layer_config['operation'] == "max_pool2d":
                     stride = operation_params['stride']
-
-                    output_shape[0] = output_shape[0]//stride
-                    output_shape[1] = output_shape[1]//stride
+                    kernel_size = operation_params['kernel_size']
+                    
+                    if 'padding' in operation_params:
+                        padding = operation_params['padding']
+                    else:
+                        padding = 0
+                    
+                    output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    
+                    if markers is not None:
+                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                    
+                    layer = operation(**operation_params)
+                    
+                elif layer_config['operation'] == "adap_avg_pool2d":
+                    output_shape[0] = operation_params['output_size'][0]
+                    output_shape[1] = operation_params['output_size'][1]
                     
                     layer = operation(**operation_params)
                     
@@ -636,3 +655,20 @@ def _assert_params(params):
     
     if 'params' not in params:
         raise AssertionError('Layer does not have operation params.')
+
+def _pooling_markers(markers, kernel_size, stride=1, padding=0):
+    new_markers = []
+    for marker in markers:
+      indices_x, indices_y = np.where(marker != 0)
+
+      new_marker = np.zeros((marker.shape[0]//stride, marker.shape[1]//stride), dtype=np.int)
+      x_limit = marker.shape[0] + 2*padding - kernel_size[0]
+      y_limit = marker.shape[1] + 2*padding - kernel_size[1]
+      for x, y in zip(indices_x, indices_y):
+          if x > x_limit or y > y_limit:
+            continue
+          new_marker[x//stride][y//stride] = marker[x][y]
+
+      new_markers.append(new_marker)
+
+    return new_markers

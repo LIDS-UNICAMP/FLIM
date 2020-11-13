@@ -61,7 +61,7 @@ def _handle_train(args):
     if args.torchvision_model is None:  
         architecture = utils.load_architecture(args.architecture_dir)
         
-    if not args.load_lids_model and not args.torchvision_model:
+    if not args.load_lids_model and not args.torchvision_model and args.markers_dir:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
         images, markers = None, None
@@ -113,6 +113,7 @@ def _handle_train(args):
         svm = utils.train_svm(model,
                               dataset,
                               args.batch_size,
+                              args.svm_max_iter,
                               device)
         
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
@@ -247,6 +248,12 @@ def get_arguments():
     parser_train.add_argument('-s', '--svm',
                         help='Use SVM as classifier',
                         action="store_true")
+    
+    parser_train.add_argument('-smi', '--svm-max-iter',
+                        help='Maximum of iterations to train SVM',
+                        type=int,
+                        default=1000,
+                        required=False)
 
     parser_train.add_argument("-smn", "--svm-filename",
                         help="SVM filename. Ex. svm.joblib.",
