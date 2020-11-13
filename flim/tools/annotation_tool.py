@@ -40,6 +40,10 @@ def get_arguments():
                         help="Image markers for the the segmentation.",
                         default=None)
 
+    parser.add_argument('--mask',
+                        help="Image label mask.",
+                        default=None)
+
     parser.add_argument('-ns',
                         '--n-superpixels',
                         help="The number of superpixels",
@@ -181,6 +185,7 @@ def wait_cursor():
 def create_viewer(image_dir,
                   markers_dir=None,
                   n_superpixels=0,
+                  mask_dir=None,
                   ):
 
     image = load_image(image_dir)
@@ -195,6 +200,11 @@ def create_viewer(image_dir,
         markers = load_label_image(markers_dir)
     else:
         markers = initial
+
+    if mask_dir is not None:
+        mask = load_label_image(mask_dir)
+    else:
+        mask = None
 
     if super_pixels is not None and markers.max() > 0:
         markers = turn_superpixels_in_markers(super_pixels, markers)
@@ -215,6 +225,9 @@ def create_viewer(image_dir,
             viewer.add_labels(boundaries, name='superpixels', opacity=1)
         else:
             viewer.add_labels(initial, name='superpixels', opacity=1)
+
+        if mask is not None:
+            viewer.add_labels(mask, name='mask', opacity=.5)
 
         viewer.add_labels(markers, name='markers', opacity=1)
 
@@ -282,7 +295,8 @@ def main():
     create_viewer(
         args.image,
         args.markers,
-        args.n_superpixels)
+        args.n_superpixels,
+        args.mask)
 
 if __name__ == "__main__":
     main()
