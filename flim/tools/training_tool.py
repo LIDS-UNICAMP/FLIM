@@ -171,6 +171,9 @@ def handle_explain(args):
         model.to(device)
     image_indices = args.image_indices
     
+    if args.intermediate:
+        utils.get_intermediate_outputs(model, dataset, args.outputs_dir, device=device)
+    
     outputs_dir = os.path.join(args.outputs_dir, "CAMs")
     if not os.path.exists(outputs_dir):
         os.makedirs(outputs_dir)
@@ -408,6 +411,11 @@ def get_arguments():
                         "--number-classes",
                         help="Number of classes",
                         type=int)
+    
+    
+    parser_explain.add_argument("--intermediate",
+                                help="Save intermediate outputs",
+                                action="store_true")
     
     parser_explain.set_defaults(func=handle_explain)
     

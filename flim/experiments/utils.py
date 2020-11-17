@@ -2,6 +2,7 @@ import json
 from logging import root
 
 import os
+from typing import cast
 
 from numpy.lib.function_base import average
 
@@ -695,9 +696,47 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
     return cam.cpu().numpy()
     
     
+def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device='cpu', only_features=True):
     
-
+    if only_features:
+        _model = model.feature_extractor
+    else:
+        _model = model
+    
+    _model.eval()
+    _model.to(device)
+    
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    
+    outputs = {}
+    
+    for inputs, _ in dataloader:
         
+        inputs = inputs.to(device)
+        
+        for layer_name, layer in _model.named_children():
+            _outputs = layer(inputs)
+            inputs = _outputs
+            
+            if layer_name not in outputs:
+                outputs[layer_name] = []
+            for _output in _outputs:
+                outputs[layer_name].append(_output.detach().cpu())
+
+    print("Saving intermediate outputs...")
+    for layer_name in outputs:
+        layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
+        
+        if not os.path.exists(layer_dir):
+            os.makedirs(layer_dir)
+            
+        _outputs = outputs[layer_name]
+        
+        for i, _output in  enumerate(_outputs):
+            _output_dir = os.path.join(layer_dir, f"{i}.npy")
+            
+            np.save(_output_dir, _output)
+                
         
             
 
