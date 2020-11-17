@@ -242,7 +242,7 @@ def train_model(model,
     if device != 'cpu':
         torch.backends.cudnn.deterministic = True
     
-    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
     
     model.to(device)
     model.train()
@@ -513,7 +513,10 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         
         inputs, labels = inputs.to(device), labels.to(device)
         
-        outputs = model.features(inputs).detach()
+        if hasattr(model, "features"):
+            outputs = model.features(inputs).detach()
+        else:
+            outputs = model.feature_extractor(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 

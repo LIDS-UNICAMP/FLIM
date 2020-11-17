@@ -62,7 +62,7 @@ class SpecialConvLayer(nn.Module):
 
     def __init__(self,
                  in_channels,
-                 out_channels=1,
+                 out_channels=None,
                  kernel_size=3,
                  padding=1,
                  stride=1,
@@ -109,7 +109,11 @@ class SpecialConvLayer(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.bias = bias
-        self.out_channels = out_channels
+        
+        if out_channels is not None:
+            self.out_channels = out_channels
+        else:
+            self.out_channels = number_of_kernels_per_marker
     
         self._activation_config = activation_config
         self._pool_config = pool_config
@@ -189,10 +193,10 @@ class SpecialConvLayer(nn.Module):
         if images is None or markers is None:
             print("Initialing with xavier")
             n = self.kernel_size * self.kernel_size * self.out_channels
-            self._conv.weight.data.normal_(0, math.sqrt(2. / n))
+            _conv.weight.data.normal_(0, math.sqrt(2. / n))
             
-            if self._conv.bias is not None:
-                self._conv.bias.data.zero_()
+            if _conv.bias is not None:
+                _conv.bias.data.zero_()
                 
         self.add_module("conv", _conv)
         

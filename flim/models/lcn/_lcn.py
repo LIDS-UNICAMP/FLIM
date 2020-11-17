@@ -54,13 +54,13 @@ class LIDSConvNet(nn.Sequential):
         self._logger.info("doing forward")
 
         for layer_name, layer in self.feature_extractor.named_children():
+               
             _y = layer.forward(x)
             x = _y
         b = self._remove_border
         
         if b > 0:
             x = x[:,:, b:-b, b:-b]
-            
         x = x.flatten(1)
         
         _y = self.classifier(x)
