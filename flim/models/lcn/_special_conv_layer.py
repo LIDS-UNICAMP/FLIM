@@ -62,7 +62,7 @@ class SpecialConvLayer(nn.Module):
 
     def __init__(self,
                  in_channels,
-                 out_channels=1,
+                 out_channels=None,
                  kernel_size=3,
                  padding=1,
                  stride=1,
@@ -109,7 +109,11 @@ class SpecialConvLayer(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.bias = bias
-        self.out_channels = out_channels
+        
+        if out_channels is not None:
+            self.out_channels = out_channels
+        else:
+            self.out_channels = number_of_kernels_per_marker
     
         self._activation_config = activation_config
         self._pool_config = pool_config
@@ -170,8 +174,10 @@ class SpecialConvLayer(nn.Module):
                                          self.kernel_size).numpy()
 
         self.out_channels = kernels_weights.shape[0]
+        
+        # print(self.std_by_channel)
 
-        self._conv = Conv2d(self.in_channels,
+        _conv = Conv2d(self.in_channels,
                             kernels_weights.shape[0],
                             kernel_size=self.kernel_size,
                             stride=self.stride,
@@ -179,25 +185,33 @@ class SpecialConvLayer(nn.Module):
                             padding=self.padding,
                             dilation=self.dilation)
 
-        self._conv.weight = nn.Parameter(torch.Tensor(kernels_weights))
+        _conv.weight = nn.Parameter(torch.Tensor(kernels_weights))
 
-        self._conv.weight.requires_grad = False
+        _conv.weight.requires_grad = False
+        
         
         if images is None or markers is None:
             print("Initialing with xavier")
             n = self.kernel_size * self.kernel_size * self.out_channels
-            self._conv.weight.data.normal_(0, math.sqrt(2. / n))
+            _conv.weight.data.normal_(0, math.sqrt(2. / n))
             
-            if self._conv.bias is not None:
-                self._conv.bias.data.zero_()
+            if _conv.bias is not None:
+                _conv.bias.data.zero_()
+                
+        self.add_module("conv", _conv)
         
         if self._activation_config is not None:
-            self._activation = __operations__[
+            _activation = __operations__[
                 self._activation_config['operation']](
                     **self._activation_config['params'])
+                
+            self.add_module("activation", _activation)
+                
         if self._pool_config is not None:
-            self._pool = __operations__[self._pool_config['operation']](
+            _pool = __operations__[self._pool_config['operation']](
                 **self._pool_config['params'])
+            
+            self.add_module("pool", _pool)
 
     def update_weights(self, images, old_markers, new_markers):
         """Learn kernel weights from image markers.
@@ -372,7 +386,7 @@ class SpecialConvLayer(nn.Module):
         self._conv.weight.requires_grad = False
 
       
-    def to(self, device):
+    '''def to(self, device):
         """Move layer to ``device``.
 
         Move layer parameters to some specified device.
@@ -395,8 +409,12 @@ class SpecialConvLayer(nn.Module):
         """
         super(SpecialConvLayer, self).to()
         
-        #self.mean_by_channel.to(device)
-        #self.std_by_channel.to(device)
+        self.mean_by_channel.weight = self.mean_by_channel.to(device)
+        self.std_by_channel.weight = self.std_by_channel.to(device)
+    
+        print("parameter weight", self.mean_by_channel.weight.device)
+        print("parameter", self.mean_by_channel.device)
+        print("device", device)
         
         self._conv = self._conv.to(device)
 
@@ -408,7 +426,7 @@ class SpecialConvLayer(nn.Module):
         if self._pool is not None:
             self._pool = self._pool.to(device)
         
-        return self
+        return self'''
     
     def forward(self, x):
         """Apply special layer to an input tensor.
@@ -430,16 +448,13 @@ class SpecialConvLayer(nn.Module):
         """
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
-        
-        y = self._conv(x)
 
+        x = (x - self.mean_by_channel)/(self.std_by_channel + 0.00001)
         
-        if self._activation is not None:
-            y = self._activation.forward(y)
-        
-        if self._pool is not None:
-            # print("max pooling")
-            y = self._pool.forward(y)
+        for _, layer in self.named_children():
+            x = layer.forward(x)
+            
+        y = x
 
         return y
         
@@ -471,6 +486,15 @@ class SpecialConvLayer(nn.Module):
                                                  self.kernel_size,
                                                  self.in_channels)
 
+        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+        
+        self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
+        self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
+                
+        # print(self.std_by_channel)
+        
+        patches = (patches - mean_by_channel)/std_by_channel
 
         kernel_weights = _kmeans_roots(patches,
                                        labels,
@@ -480,7 +504,8 @@ class SpecialConvLayer(nn.Module):
         kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
         norm = np.linalg.norm(kernel_weights, axis=1)
         norm = np.expand_dims(norm, 1)
-        kernel_weights = kernel_weights/norm
+        #print(norm)
+        kernel_weights = kernel_weights/(norm + 0.00001)
         kernel_weights = kernel_weights.reshape(kernels_shape)
         return kernel_weights
     

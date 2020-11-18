@@ -294,7 +294,7 @@ class LCNCreator:
                                       activation_config=activation_config,
                                       pool_config=pool_config)
                     if (images is None or markers is None) and state_dict is not None:
-                        kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
+                        kernels_number = state_dict[f'feature_extractor.{key}.conv.weight'].size(0)
                         layer.initialize_weights(kernels_number=kernels_number)
                     elif (images is None or markers is None) and 'out_channels' in operation_params:
                         layer.initialize_weights(kernels_number=operation_params['out_channels'])

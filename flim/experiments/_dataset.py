@@ -33,7 +33,7 @@ class LIDSDataset(Dataset):
         
         image = rgb2lab(image)
         image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
-        
+
         image = image.astype(np.float32)
 
         label = self._label_of_image(self.images_names[idx])
