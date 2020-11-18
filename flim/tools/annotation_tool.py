@@ -174,6 +174,25 @@ def turn_superpixels_in_markers(superpixels, markers):
     
     return new_markers
 
+@jit
+def turn_superpixels_borders_in_markers(superpixels, markers):
+    new_markers = np.zeros_like(markers)
+
+    labels = np.unique(superpixels)
+
+    markers_mask = markers != 0
+    boundaries = find_boundaries(superpixels,
+                                 connectivity=2,
+                                 mode="inner").astype(np.int)
+    for label in labels:
+        superpixel_mask = np.logical_and(superpixels == label, boundaries)
+        # flag = np.any(np.logical_and(markers_mask, superpixel_mask))
+        marker_label = markers_mask[superpixel_mask].max()
+
+        new_markers[superpixel_mask] = marker_label
+
+    return new_markers
+
 @contextmanager
 def wait_cursor():
     try:
@@ -198,6 +217,8 @@ def create_viewer(image_dir,
 
     if markers_dir is not None:
         markers = load_label_image(markers_dir)
+    elif path.exists(image_dir.split('.')[0] + ".txt"):
+        markers = load_label_image(image_dir.split('.')[0] + ".txt")
     else:
         markers = initial
 
@@ -258,7 +279,7 @@ def create_viewer(image_dir,
         )
         def propagate_markers():
             markers = viewer.layers['markers'].data
-            new_markers = turn_superpixels_in_markers(super_pixels, markers)
+            new_markers = turn_superpixels_borders_in_markers(super_pixels, markers)
             viewer.layers['markers'].data = new_markers
 
         
