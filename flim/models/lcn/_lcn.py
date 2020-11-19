@@ -61,11 +61,22 @@ class LIDSConvNet(nn.Sequential):
         
         if b > 0:
             x = x[:,:, b:-b, b:-b]
-        x = x.flatten(1)
         
-        _y = self.classifier(x)
+        if x.ndim > 3:
+            x = x.flatten(1)
+        else:
+            x = x.permute(0, 2, 1)
+            # x = x.reshape(-1, x.shape[-1])
+        
+        for layer_name, layer in self.classifier.named_children():
+            if isinstance(layer, nn.Fold):
+                x = x.permute(0, 2, 1)
+            _y = layer.forward(x)
+            x = _y
 
-        return _y
+        y = x
+
+        return y
 
     def to(self, device):
         """Move layer to ``device``.

@@ -355,6 +355,21 @@ class LCNCreator:
                     
                 elif layer_config['operation'] == "unfold":
                     layer = operation(**operation_params)
+
+                    torch_image = torch.from_numpy(images[0])
+                    torch_image = torch_image.unsqueeze(0)
+                    torch_image = torch_image.permute(0, 3, 1, 2).to(device)
+                    layer.train()
+                    layer.to(device)
+
+                    output = layer(torch_image)
+
+                    output_shape[0] = 1
+                    output_shape[1] = 1
+                    output_shape[2] = output.shape[1]
+
+                    last_conv_layer_out_channels = output.shape[1]
+
                     
                 else:
                     layer = operation(**operation_params)
@@ -441,11 +456,14 @@ class LCNCreator:
 
                 layer = operation(**operation_params)
 
-                layer.initialize_weights(features, all_labels)
+                if use_backpropagation:
+                    layer.initialize_weights()
+                else:
+                    layer.initialize_weights(features, all_labels)
             else:
                 layer = operation(**operation_params)
 
-            if features is not None:
+            if features is not None and not use_backpropagation:
                 torch_features = torch.Tensor(features)
                 
                 input_size = torch_features.size(0)
@@ -464,7 +482,7 @@ class LCNCreator:
             classifier.add_module(key, layer)
 
         #initialization
-        if features is None:
+        if features is None or use_backpropagation:
             for m in classifier.modules():
                 if isinstance(m, SpecialLinearLayer):
                     m._linear.weight.data.normal_(0, 0.01)

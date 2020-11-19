@@ -235,8 +235,9 @@ def train_model(model,
                 lr=1e-3,
                 weight_decay=1e-3,
                 step=0,
-                criterion=nn.CrossEntropyLoss(),
-                device='cpu'):
+                loss_function=nn.CrossEntropyLoss,
+                device='cpu',
+                ignore_label=-100):
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -247,6 +248,8 @@ def train_model(model,
     
     model.to(device)
     model.train()
+
+    criterion = loss_function(ignore_index=ignore_label)
 
     #optimizer
     optimizer = optim.Adam([{
@@ -272,6 +275,7 @@ def train_model(model,
         
         running_loss = 0.0
         running_corrects = 0.0
+        n = 0
 
         for i, data in enumerate(dataloader, 0):
             inputs, labels = data
@@ -293,15 +297,19 @@ def train_model(model,
             optimizer.step()
             
             #print(outputs)
+            mask = labels != ignore_label
+
+            running_loss += loss.item()*(mask.sum())
+            running_corrects += torch.sum(preds[mask] == labels[mask].data)
+
             
-            running_loss += loss.item()*inputs.size(0)/len(train_set)
-            running_corrects += torch.sum(preds == labels.data)
+            n += (mask).sum()
             
         if step > 0:
             scheduler.step()
             
-        epoch_loss = running_loss
-        epoch_acc = (running_corrects.double()/len(train_set)).item()
+        epoch_loss = running_loss/n
+        epoch_acc = (running_corrects.double())/n
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
         
