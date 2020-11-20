@@ -699,7 +699,10 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
 def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device='cpu', only_features=True):
     
     if only_features:
-        _model = model.feature_extractor
+        if hasattr(model, "features"):
+            _model = model.features
+        else:
+            _model = model.feature_extractor
     else:
         _model = model
     
