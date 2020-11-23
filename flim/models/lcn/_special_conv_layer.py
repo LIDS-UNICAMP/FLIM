@@ -159,7 +159,7 @@ class SpecialConvLayer(nn.Module):
 
         """
         if self._use_random_kernels:
-            kernels_weights = _create_random_pca_kernels(n=self.number_of_kernels_per_marker * 1000,
+            kernels_weights = _create_random_pca_kernels(n=self.number_of_kernels_per_marker * 10,
                                                          k=self.number_of_kernels_per_marker,
                                                          in_channels=self.in_channels,
                                                          kernel_size=self.kernel_size)
@@ -448,7 +448,6 @@ class SpecialConvLayer(nn.Module):
         """
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
-
         x = (x - self.mean_by_channel)/(self.std_by_channel + 0.00001)
         
         for _, layer in self.named_children():
