@@ -26,10 +26,6 @@ def get_device(gpus):
         device = torch.device('cpu')
     else:
         device = torch.device(gpus[0])
-        
-    print(device)
-    print(gpus)
-    print(gpu)
 
     return device
 
@@ -72,7 +68,7 @@ def _handle_train(args):
     
     input_shape = dataset[0][0].permute(1, 2, 0).shape
     
-    print(input_shape)
+    # print(input_shape)
 
     if architecture is not None and not args.load_lids_model:
         model = utils.build_model(architecture,
@@ -120,6 +116,7 @@ def _handle_train(args):
 
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
+    utils.save_lids_model(model, args.outputs_dir, args.model_filename)
 
 def _handle_select(args):
     select_images_to_put_markers(args.dataset_dir,

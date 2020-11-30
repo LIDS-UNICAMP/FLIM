@@ -37,7 +37,7 @@ import math
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer
+from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
 
 def load_image(image_dir):
@@ -379,9 +379,6 @@ def load_lids_model(model, lids_model_dir, architecture):
     
     classifier_arch = architecture['classifier']['layers']
     for name, layer in model.classifier.named_children():
-        #if "backpropagation" in classifier_arch[name]:
-        #    if classifier_arch[name]['backpropagation']:
-        #        continue
         print(name)
         if isinstance(layer, SpecialLinearLayer):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
@@ -405,7 +402,54 @@ def load_lids_model(model, lids_model_dir, architecture):
                 layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
     print("Finish loading...")     
     return model
+
+def save_lids_model(model, outputs_dir, model_name):
+    if not isinstance(model, LIDSConvNet):
+        pass
+    
+    print("Saving model in LIDS format...")
+    
+    if model_name.endswith('.pt'):
+        model_name = model_name.replace('.pt', '')
         
+    if not os.path.exists(os.path.join(outputs_dir, model_name)):
+        os.makedirs(os.path.join(outputs_dir, model_name))
+    
+    for name, layer in model.feature_extractor.named_children():
+        if isinstance(layer, SpecialConvLayer):
+            weights = layer.conv.weight.detach().cpu()
+
+            num_kernels = weights.size(0)
+            weights = weights.reshape(num_kernels, -1)
+
+            weights = weights.transpose(0, 1)
+
+            mean = layer.mean_by_channel.detach().cpu()
+            std = layer.std_by_channel.detach().cpu()
+
+            mean = mean.reshape(1, -1)
+            std = std.reshape(1, -1)
+
+            np.save(os.path.join(outputs_dir, model_name, f"{name}-kernels.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+    
+    for name, layer in model.classifier.named_children():
+        if isinstance(layer, SpecialLinearLayer):
+            weights = layer._linear.weight.detach().cpu()
+            
+            weights.transpose(0, 1)
+            
+            mean = layer.mean.detach().cpu()
+            std = layer.std.detach().cpu()
+            
+            mean = mean.reshape(-1)
+            std = std.reshape(-1)
+            
+            np.save(os.path.join(outputs_dir, model_name, f"{name}-weights.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+            
 
 def _calulate_metrics(true_labels, pred_labels):
     average = 'binary' if np.unique(true_labels).shape[0] == 2 else 'weighted'
