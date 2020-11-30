@@ -351,49 +351,51 @@ def load_lids_model(model, lids_model_dir, architecture):
     for name, layer in model.feature_extractor.named_children():
         print(name)
         if isinstance(layer, SpecialConvLayer):
-            weights = np.load(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-kernels.npy"))
-            
-            in_channels = layer.in_channels
-            out_channels = layer.out_channels
-            kernel_size = layer.kernel_size
-            
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-mean.txt")) as f:
-                lines = f.readlines()[0]
-                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"{name}-kernels.npy"))
                 
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-stdev.txt")) as f:
-                lines = f.readlines()[0]
-                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
-            print(weights.max())
-            weights = weights.transpose()
-            weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
-            
-            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
-            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
-            
-            layer._conv.weight = nn.Parameter(torch.from_numpy(weights).float())
+                in_channels = layer.in_channels
+                out_channels = layer.out_channels
+                kernel_size = layer.kernel_size
+                
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-mean.txt")) as f:
+                    lines = f.readlines()[0]
+                    mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                    
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-stdev.txt")) as f:
+                    lines = f.readlines()[0]
+                    std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                
+                weights = weights.transpose()
+                weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
+                
+                layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
+                layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
+                
+                layer.conv.weight = nn.Parameter(torch.from_numpy(weights).float())
     
     classifier_arch = architecture['classifier']['layers']
     for name, layer in model.classifier.named_children():
-        if "backpropagation" in classifier_arch[name]:
-            if classifier_arch[name]['backpropagation']:
-                continue
+        #if "backpropagation" in classifier_arch[name]:
+        #    if classifier_arch[name]['backpropagation']:
+        #        continue
+        print(name)
         if isinstance(layer, SpecialLinearLayer):
-            if os.path.exists(os.path.join(lids_model_dir, f"{name}-train1.npy")):
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
-                                            f"{name}-train1.npy"))
+                                            f"{name}-weights.npy"))
                 weights = weights.transpose()
                 
                 with open(os.path.join(lids_model_dir,
-                                            f"{name}-train1-mean.txt")) as f:
+                                            f"{name}-mean.txt")) as f:
                     lines = f.readlines()
                     mean = np.array([float(line) for line in lines])
                     
                 with open(os.path.join(lids_model_dir,
-                                            f"{name}-train1-stdev.txt")) as f:
+                                            f"{name}-stdev.txt")) as f:
                     lines = f.readlines()
                     std = np.array([float(line) for line in lines])
                     
@@ -401,7 +403,7 @@ def load_lids_model(model, lids_model_dir, architecture):
                 layer.std = torch.from_numpy(std.reshape(1, -1)).float()
                 
                 layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
-                
+    print("Finish loading...")     
     return model
         
 
