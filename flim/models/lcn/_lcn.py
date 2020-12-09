@@ -54,6 +54,7 @@ class LIDSConvNet(nn.Sequential):
         self._logger.info("doing forward")
 
         for layer_name, layer in self.feature_extractor.named_children():
+               
             _y = layer.forward(x)
             x = _y
         b = self._remove_border
@@ -61,11 +62,21 @@ class LIDSConvNet(nn.Sequential):
         if b > 0:
             x = x[:,:, b:-b, b:-b]
         
-        x = x.flatten(1)
+        if x.ndim > 3:
+            x = x.flatten(1)
+        else:
+            x = x.permute(0, 2, 1)
+            # x = x.reshape(-1, x.shape[-1])
         
-        _y = self.classifier(x)
+        for layer_name, layer in self.classifier.named_children():
+            if isinstance(layer, nn.Fold):
+                x = x.permute(0, 2, 1)
+            _y = layer.forward(x)
+            x = _y
 
-        return _y
+        y = x
+
+        return y
 
     def to(self, device):
         """Move layer to ``device``.

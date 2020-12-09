@@ -228,7 +228,7 @@ class LCNCreator:
 
         for key in layers_arch:
             layer_config = layers_arch[key]
-
+            print(f"Building {key}")
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels = self._build_module(layer_config,
                                                                            images,
@@ -284,20 +284,19 @@ class LCNCreator:
                         output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
                         
-                        # markers = functional.F.max_pool2d(torch.from_numpy(markers).float().unsqueeze(0), 
-                        #                                   kernel_size=kernel_size,
-                        #                                   stride=kernel_size).squeeze().numpy()
-                        
-                        if markers:
+                        if markers is not None:
                             markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
-
-                        
+                            
                     operation_params['in_channels'] = last_conv_layer_out_channels
+                    
+                    if markers is not None and "number_of_kernels_per_marker" not in operation_params:
+                        operation_params["number_of_kernels_per_marker"] = operation_params["out_channels"]//np.array(markers).max()
+                        
                     layer = operation(**operation_params,
                                       activation_config=activation_config,
                                       pool_config=pool_config)
                     if (images is None or markers is None) and state_dict is not None:
-                        kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
+                        kernels_number = state_dict[f'feature_extractor.{key}.conv.weight'].size(0)
                         layer.initialize_weights(kernels_number=kernels_number)
                     elif (images is None or markers is None) and 'out_channels' in operation_params:
                         layer.initialize_weights(kernels_number=operation_params['out_channels'])
@@ -329,9 +328,24 @@ class LCNCreator:
                     
                 elif layer_config['operation'] == "max_pool2d":
                     stride = operation_params['stride']
-
-                    output_shape[0] = output_shape[0]//stride
-                    output_shape[1] = output_shape[1]//stride
+                    kernel_size = operation_params['kernel_size']
+                    
+                    if 'padding' in operation_params:
+                        padding = operation_params['padding']
+                    else:
+                        padding = 0
+                    
+                    output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    
+                    if markers is not None:
+                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                    
+                    layer = operation(**operation_params)
+                    
+                elif layer_config['operation'] == "adap_avg_pool2d":
+                    output_shape[0] = operation_params['output_size'][0]
+                    output_shape[1] = operation_params['output_size'][1]
                     
                     layer = operation(**operation_params)
                     
@@ -343,6 +357,21 @@ class LCNCreator:
                     
                 elif layer_config['operation'] == "unfold":
                     layer = operation(**operation_params)
+
+                    torch_image = torch.from_numpy(images[0])
+                    torch_image = torch_image.unsqueeze(0)
+                    torch_image = torch_image.permute(0, 3, 1, 2).to(device)
+                    layer.train()
+                    layer.to(device)
+
+                    output = layer(torch_image)
+
+                    output_shape[0] = 1
+                    output_shape[1] = 1
+                    output_shape[2] = output.shape[1]
+
+                    last_conv_layer_out_channels = output.shape[1]
+
                     
                 else:
                     layer = operation(**operation_params)
@@ -429,11 +458,14 @@ class LCNCreator:
 
                 layer = operation(**operation_params)
 
-                layer.initialize_weights(features, all_labels)
+                if use_backpropagation:
+                    layer.initialize_weights()
+                else:
+                    layer.initialize_weights(features, all_labels)
             else:
                 layer = operation(**operation_params)
 
-            if features is not None:
+            if features is not None and not use_backpropagation:
                 torch_features = torch.Tensor(features)
                 
                 input_size = torch_features.size(0)
@@ -452,7 +484,7 @@ class LCNCreator:
             classifier.add_module(key, layer)
 
         #initialization
-        if features is None:
+        if features is None or use_backpropagation:
             for m in classifier.modules():
                 if isinstance(m, SpecialLinearLayer):
                     m._linear.weight.data.normal_(0, 0.01)

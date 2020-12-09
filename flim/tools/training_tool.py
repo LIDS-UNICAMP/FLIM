@@ -26,10 +26,6 @@ def get_device(gpus):
         device = torch.device('cpu')
     else:
         device = torch.device(gpus[0])
-        
-    print(device)
-    print(gpus)
-    print(gpu)
 
     return device
 
@@ -72,7 +68,7 @@ def _handle_train(args):
     
     input_shape = dataset[0][0].permute(1, 2, 0).shape
     
-    print(input_shape)
+    # print(input_shape)
 
     if architecture is not None and not args.load_lids_model:
         model = utils.build_model(architecture,
@@ -113,12 +109,14 @@ def _handle_train(args):
         svm = utils.train_svm(model,
                               dataset,
                               args.batch_size,
+                              args.svm_max_iter,
                               device)
         
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
 
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
+    utils.save_lids_model(model, args.outputs_dir, args.model_filename)
 
 def _handle_select(args):
     select_images_to_put_markers(args.dataset_dir,
@@ -169,6 +167,9 @@ def handle_explain(args):
         model = utils.load_torchvision_model_weights(model, args.model_path)
         model.to(device)
     image_indices = args.image_indices
+    
+    if args.intermediate:
+        utils.get_intermediate_outputs(model, dataset, args.outputs_dir, device=device)
     
     outputs_dir = os.path.join(args.outputs_dir, "CAMs")
     if not os.path.exists(outputs_dir):
@@ -247,6 +248,12 @@ def get_arguments():
     parser_train.add_argument('-s', '--svm',
                         help='Use SVM as classifier',
                         action="store_true")
+    
+    parser_train.add_argument('-smi', '--svm-max-iter',
+                        help='Maximum of iterations to train SVM',
+                        type=int,
+                        default=1000,
+                        required=False)
 
     parser_train.add_argument("-smn", "--svm-filename",
                         help="SVM filename. Ex. svm.joblib.",
@@ -401,6 +408,11 @@ def get_arguments():
                         "--number-classes",
                         help="Number of classes",
                         type=int)
+    
+    
+    parser_explain.add_argument("--intermediate",
+                                help="Save intermediate outputs",
+                                action="store_true")
     
     parser_explain.set_defaults(func=handle_explain)
     

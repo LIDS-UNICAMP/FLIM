@@ -96,7 +96,11 @@ class SpecialLinearLayer(nn.Module):
 
         mean = self.mean
         std = self.std
-        
+
+        if x.ndim == 3:
+            mean = mean.view(1, 1, -1)
+            std = std.view(1, 1, -1)
+            
         x = (x - mean)/std
     
         y = self._linear(x)

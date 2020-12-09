@@ -2,6 +2,7 @@ import json
 from logging import root
 
 import os
+from typing import cast
 
 from numpy.lib.function_base import average
 
@@ -36,7 +37,7 @@ import math
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer
+from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
 
 def load_image(image_dir):
@@ -234,18 +235,21 @@ def train_model(model,
                 lr=1e-3,
                 weight_decay=1e-3,
                 step=0,
-                criterion=nn.CrossEntropyLoss(),
-                device='cpu'):
+                loss_function=nn.CrossEntropyLoss,
+                device='cpu',
+                ignore_label=-100):
 
     torch.manual_seed(42)
     np.random.seed(42)
     if device != 'cpu':
         torch.backends.cudnn.deterministic = True
     
-    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
     
     model.to(device)
     model.train()
+
+    criterion = loss_function(ignore_index=ignore_label)
 
     #optimizer
     optimizer = optim.Adam([{
@@ -271,6 +275,7 @@ def train_model(model,
         
         running_loss = 0.0
         running_corrects = 0.0
+        n = 0
 
         for i, data in enumerate(dataloader, 0):
             inputs, labels = data
@@ -292,15 +297,19 @@ def train_model(model,
             optimizer.step()
             
             #print(outputs)
+            mask = labels != ignore_label
+
+            running_loss += loss.item()*(mask.sum())
+            running_corrects += torch.sum(preds[mask] == labels[mask].data)
+
             
-            running_loss += loss.item()*inputs.size(0)/len(train_set)
-            running_corrects += torch.sum(preds == labels.data)
+            n += (mask).sum()
             
         if step > 0:
             scheduler.step()
             
-        epoch_loss = running_loss
-        epoch_acc = (running_corrects.double()/len(train_set)).item()
+        epoch_loss = running_loss/n
+        epoch_acc = (running_corrects.double())/n
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
         
@@ -342,49 +351,48 @@ def load_lids_model(model, lids_model_dir, architecture):
     for name, layer in model.feature_extractor.named_children():
         print(name)
         if isinstance(layer, SpecialConvLayer):
-            weights = np.load(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-kernels.npy"))
-            
-            in_channels = layer.in_channels
-            out_channels = layer.out_channels
-            kernel_size = layer.kernel_size
-            
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-mean.txt")) as f:
-                lines = f.readlines()[0]
-                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"{name}-kernels.npy"))
                 
-            with open(os.path.join(lids_model_dir,
-                                           f"{name}-train1-seeds-stdev.txt")) as f:
-                lines = f.readlines()[0]
-                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
-            print(weights.max())
-            weights = weights.transpose()
-            weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
-            
-            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
-            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
-            
-            layer._conv.weight = nn.Parameter(torch.from_numpy(weights).float())
+                in_channels = layer.in_channels
+                out_channels = layer.out_channels
+                kernel_size = layer.kernel_size
+                
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-mean.txt")) as f:
+                    lines = f.readlines()[0]
+                    mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                    
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-stdev.txt")) as f:
+                    lines = f.readlines()[0]
+                    std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                
+                weights = weights.transpose()
+                weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
+                
+                layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
+                layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
+                
+                layer.conv.weight = nn.Parameter(torch.from_numpy(weights).float())
     
     classifier_arch = architecture['classifier']['layers']
     for name, layer in model.classifier.named_children():
-        if "backpropagation" in classifier_arch[name]:
-            if classifier_arch[name]['backpropagation']:
-                continue
+        print(name)
         if isinstance(layer, SpecialLinearLayer):
-            if os.path.exists(os.path.join(lids_model_dir, f"{name}-train1.npy")):
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
-                                            f"{name}-train1.npy"))
+                                            f"{name}-weights.npy"))
                 weights = weights.transpose()
                 
                 with open(os.path.join(lids_model_dir,
-                                            f"{name}-train1-mean.txt")) as f:
+                                            f"{name}-mean.txt")) as f:
                     lines = f.readlines()
                     mean = np.array([float(line) for line in lines])
                     
                 with open(os.path.join(lids_model_dir,
-                                            f"{name}-train1-stdev.txt")) as f:
+                                            f"{name}-stdev.txt")) as f:
                     lines = f.readlines()
                     std = np.array([float(line) for line in lines])
                     
@@ -392,9 +400,56 @@ def load_lids_model(model, lids_model_dir, architecture):
                 layer.std = torch.from_numpy(std.reshape(1, -1)).float()
                 
                 layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
-                
+    print("Finish loading...")     
     return model
+
+def save_lids_model(model, outputs_dir, model_name):
+    if not isinstance(model, LIDSConvNet):
+        pass
+    
+    print("Saving model in LIDS format...")
+    
+    if model_name.endswith('.pt'):
+        model_name = model_name.replace('.pt', '')
         
+    if not os.path.exists(os.path.join(outputs_dir, model_name)):
+        os.makedirs(os.path.join(outputs_dir, model_name))
+    
+    for name, layer in model.feature_extractor.named_children():
+        if isinstance(layer, SpecialConvLayer):
+            weights = layer.conv.weight.detach().cpu()
+
+            num_kernels = weights.size(0)
+            weights = weights.reshape(num_kernels, -1)
+
+            weights = weights.transpose(0, 1)
+
+            mean = layer.mean_by_channel.detach().cpu()
+            std = layer.std_by_channel.detach().cpu()
+
+            mean = mean.reshape(1, -1)
+            std = std.reshape(1, -1)
+
+            np.save(os.path.join(outputs_dir, model_name, f"{name}-kernels.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+    
+    for name, layer in model.classifier.named_children():
+        if isinstance(layer, SpecialLinearLayer):
+            weights = layer._linear.weight.detach().cpu()
+            
+            weights.transpose(0, 1)
+            
+            mean = layer.mean.detach().cpu()
+            std = layer.std.detach().cpu()
+            
+            mean = mean.reshape(-1)
+            std = std.reshape(-1)
+            
+            np.save(os.path.join(outputs_dir, model_name, f"{name}-weights.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+            
 
 def _calulate_metrics(true_labels, pred_labels):
     average = 'binary' if np.unique(true_labels).shape[0] == 2 else 'weighted'
@@ -466,8 +521,8 @@ def validate_model(model,
     print("Calculating metrics...")
     _calulate_metrics(true_labels, pred_labels)
 
-def train_svm(model, train_set, batch_size=32, device='cpu'):
-    clf = svm.LinearSVC(max_iter=200000)
+def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
+    clf = svm.LinearSVC(max_iter=max_iter)
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
     model.eval()
@@ -477,7 +532,7 @@ def train_svm(model, train_set, batch_size=32, device='cpu'):
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model.features(inputs).detach()
+        outputs = model.feature_extractor(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
@@ -513,7 +568,10 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         
         inputs, labels = inputs.to(device), labels.to(device)
         
-        outputs = model.features(inputs).detach()
+        if hasattr(model, "features"):
+            outputs = model.features(inputs).detach()
+        else:
+            outputs = model.feature_extractor(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 
@@ -692,9 +750,50 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
     return cam.cpu().numpy()
     
     
+def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device='cpu', only_features=True):
     
-
+    if only_features:
+        if hasattr(model, "features"):
+            _model = model.features
+        else:
+            _model = model.feature_extractor
+    else:
+        _model = model
+    
+    _model.eval()
+    _model.to(device)
+    
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    
+    outputs = {}
+    
+    for inputs, _ in dataloader:
         
+        inputs = inputs.to(device)
+        
+        for layer_name, layer in _model.named_children():
+            _outputs = layer(inputs)
+            inputs = _outputs
+            
+            if layer_name not in outputs:
+                outputs[layer_name] = []
+            for _output in _outputs:
+                outputs[layer_name].append(_output.detach().cpu())
+
+    print("Saving intermediate outputs...")
+    for layer_name in outputs:
+        layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
+        
+        if not os.path.exists(layer_dir):
+            os.makedirs(layer_dir)
+            
+        _outputs = outputs[layer_name]
+        
+        for i, _output in  enumerate(_outputs):
+            _output_dir = os.path.join(layer_dir, f"{i}.npy")
+            
+            np.save(_output_dir, _output)
+                
         
             
 

@@ -14,3 +14,4 @@ pylama
 termcolor 
 numba
 napari[pyside2]
+magicgui
