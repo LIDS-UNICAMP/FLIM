@@ -68,6 +68,7 @@ class SpecialConvLayer(nn.Module):
                  bias=False,
                  dilation=1,
                  number_of_kernels_per_marker=None,
+                 marker_based_norm=True,
                  activation_config=None,
                  pool_config=None,
                  device='cpu'):
@@ -112,6 +113,7 @@ class SpecialConvLayer(nn.Module):
         self._activation_config = activation_config
         self._pool_config = pool_config
         self.number_of_kernels_per_marker = number_of_kernels_per_marker
+        self.marker_based_norm = marker_based_norm
         
         if number_of_kernels_per_marker is not None:
             self.out_channels = number_of_kernels_per_marker
@@ -123,8 +125,9 @@ class SpecialConvLayer(nn.Module):
         #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
         #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
         
-        #self.mean_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
-        #self.std_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
+        if marker_based_norm:
+            self.register_parameter('mean_by_channel', nn.Parameter(torch.zeros(1, self.in_channels, 1, 1)))
+            self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, self.in_channels, 1, 1)))
         
         self.device = device
         
@@ -418,7 +421,9 @@ class SpecialConvLayer(nn.Module):
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
 
-        # print(x.size())
+        if self.marker_based_norm:
+            x = (x - self.mean_by_channel)/(self.std_by_channel + 0.00001)
+        
         y = self._conv(x)
 
         if self._activation is not None:
