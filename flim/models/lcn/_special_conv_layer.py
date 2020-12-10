@@ -452,8 +452,9 @@ class SpecialConvLayer(nn.Module):
         mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
         std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
         
-        self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
-        self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
+        if self.marker_based_norm:
+            self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
+            self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
                 
         # print(self.std_by_channel)
         
