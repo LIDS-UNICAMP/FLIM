@@ -237,7 +237,8 @@ def train_model(model,
                 step=0,
                 loss_function=nn.CrossEntropyLoss,
                 device='cpu',
-                ignore_label=-100):
+                ignore_label=-100,
+                only_classifier=False):
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -247,21 +248,28 @@ def train_model(model,
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
     
     model.to(device)
-    model.train()
+    model.eval()
 
     criterion = loss_function(ignore_index=ignore_label)
+    
+    parameters = []
+    
+    if not only_classifier:
+        model.feature_extractor.train()
+        parameters.append({
+                            "params": model.feature_extractor.parameters(),
+                            "lr": lr,
+                            "weight_decay": weight_decay
+                            })
+    model.classifier.train()   
+    parameters.append({
+                        "params": model.classifier.parameters(),
+                        "lr": lr,
+                        "weight_decay": weight_decay
+                    })
 
     #optimizer
-    optimizer = optim.Adam([{
-                                "params": model.feature_extractor.parameters(),
-                                "lr": lr,
-                                "weight_decay": weight_decay
-                            },
-                            {
-                                "params": model.classifier.parameters(),
-                                "lr": lr,
-                                "weight_decay": weight_decay
-                            }])
+    optimizer = optim.Adam(parameters)
     if step > 0:
         scheduler = optim.lr_scheduler.StepLR(optimizer,
                                             step_size=15,

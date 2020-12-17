@@ -159,8 +159,8 @@ class SpecialConvLayer(nn.Module):
 
         """
         if self._use_random_kernels:
-            kernels_weights = _create_random_pca_kernels(n=self.number_of_kernels_per_marker * 10,
-                                                         k=self.number_of_kernels_per_marker,
+            kernels_weights = _create_random_pca_kernels(n=self.out_channels * 10,
+                                                         k=self.out_channels,
                                                          in_channels=self.in_channels,
                                                          kernel_size=self.kernel_size)
             

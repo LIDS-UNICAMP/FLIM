@@ -104,7 +104,8 @@ def _handle_train(args):
                          args.learning_rate,
                          args.weight_decay,
                          step=args.step,
-                         device=device)
+                         device=device,
+                         only_classifier=args.only_classifier)
     if args.svm:
         svm = utils.train_svm(model,
                               dataset,
@@ -262,6 +263,11 @@ def get_arguments():
     parser_train.add_argument("-b",
                               "--backpropagation",
                               help="Use backpropagation to trian layers.",
+                              action="store_true")
+    
+    parser_train.add_argument("-c",
+                              "--only-classifier",
+                              help="Train with only the classifier with backpropagation.",
                               action="store_true")
     
     parser_train.add_argument("-ld",
