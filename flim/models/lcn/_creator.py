@@ -137,26 +137,29 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
 
         """
-        architecture = self._architecture['features']
-        images = self._images
-        markers = self._markers
-        
-        if self._relabel_markers:
-            start_label = 2 if self._has_superpixel_markers else 1
-            markers = label_connected_components(markers, start_label)
+        self._output_shape = self._input_shape
 
-        if self._has_superpixel_markers:
-            markers += self._superpixel_markers
+        if "features" in self._architecture:
+            architecture = self._architecture['features']
+            images = self._images
+            markers = self._markers
+            
+            if self._relabel_markers:
+                start_label = 2 if self._has_superpixel_markers else 1
+                markers = label_connected_components(markers, start_label)
 
-        module, out_channels = self._build_module(architecture,
-                                    images,
-                                    markers,
-                                    remove_similar_filters=remove_similar_filters,
-                                    similarity_level=similarity_level)
+            if self._has_superpixel_markers:
+                markers += self._superpixel_markers
 
-        self.last_conv_layer_out_channels = out_channels
+            module, out_channels = self._build_module(architecture,
+                                        images,
+                                        markers,
+                                        remove_similar_filters=remove_similar_filters,
+                                        similarity_level=similarity_level)
 
-        self.LCN.feature_extractor = module
+            self.last_conv_layer_out_channels = out_channels
+
+            self.LCN.feature_extractor = module
 
     def load_model(self, state_dict):
         architecture = self._architecture

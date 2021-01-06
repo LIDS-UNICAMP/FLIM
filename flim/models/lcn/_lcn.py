@@ -64,7 +64,7 @@ class LIDSConvNet(nn.Sequential):
         
         if x.ndim > 3:
             x = x.flatten(1)
-        else:
+        elif x.ndim == 3:
             x = x.permute(0, 2, 1)
             # x = x.reshape(-1, x.shape[-1])
         
@@ -99,6 +99,8 @@ class LIDSConvNet(nn.Sequential):
         This method modifies the module in-place.
 
         """
+
+        
         for _, layer in self.feature_extractor.named_children():
             layer.to(device)
         

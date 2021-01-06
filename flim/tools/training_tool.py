@@ -17,6 +17,7 @@ import matplotlib as mpl
 from skimage import io
 
 from ..experiments import utils
+from ..experiments._dataset import ToTensor
 
     
 def get_device(gpus):
@@ -63,10 +64,15 @@ def _handle_train(args):
         images, markers = None, None
 
 
-    transform = transforms.Compose([transforms.ToTensor()])
+    transform = transforms.Compose([ToTensor()])
     dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
     
-    input_shape = dataset[0][0].permute(1, 2, 0).shape
+    _first_image = dataset[0][0]
+
+    if _first_image.ndim > 1:
+        input_shape = _first_image.permute(1, 2, 0).shape
+    else:
+        input_shape = _first_image.shape
     
     # print(input_shape)
 
@@ -206,8 +212,7 @@ def get_arguments():
                         required=True)
 
     parser_train.add_argument('-ts', '--train-split',
-                        help="Split to train the mlp.",
-                        required=True)
+                        help="Split to train the mlp.")
 
     parser_train.add_argument("-ad", "--architecture-dir",
                         help="Architecture dir")
