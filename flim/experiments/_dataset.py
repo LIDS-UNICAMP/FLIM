@@ -8,10 +8,12 @@ import numpy as np
 from skimage import io
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
+import pyift.pyift as ift
+
 __all__ = ["LIDSDataset"]
 
 class LIDSDataset(Dataset):
-    def __init__(self, root_dir, split_dir, transform=None):
+    def __init__(self, root_dir, split_dir=None, transform=None):
         self.root_dir = root_dir
         self.split_dir = split_dir
         self.transform = transform
@@ -23,7 +25,12 @@ class LIDSDataset(Dataset):
 
     def __getitem__(self, idx):
         image_path = os.path.join(self.root_dir, self.images_names[idx])
-        image = io.imread(image_path)
+
+        if image_path.endswith('mimg'):
+            image = ift.ReadMImage(image_path).AsNumPy().squeeze()
+        
+        else:
+            image = io.imread(image_path)
         
         if image.ndim == 2:
             image = gray2rgb(image)
@@ -53,10 +60,15 @@ class LIDSDataset(Dataset):
         return label
     
     def _list_images_files(self):
-        with open(self.split_dir, 'r') as f:
-            filenames = f.read()
+        if self.split_dir is not None:
+            with open(self.split_dir, 'r') as f:
+                _filenames = f.read()
+                filenames = [filename for filename in _filenames.split('\n') if len(filename) > 0]
+        else:
+
+            filenames = os.listdir(self.root_dir)
         
-        return [filename for filename in filenames.split('\n') if len(filename) > 0]
+        return filenames
         
     def weights_for_balance(self, nclasses):
         weights_dir = os.path.join(self.root_dir, '.weights-for-balance-{}.npy'.format(self.image_list))
