@@ -57,6 +57,9 @@ def _handle_train(args):
     
     if args.torchvision_model is None:  
         architecture = utils.load_architecture(args.architecture_dir)
+
+        if "features" in architecture and args.dataset_dir.endswith(".zip"):
+            del architecture['features']
         
     if not args.load_lids_model and not args.torchvision_model and args.markers_dir:
         images, markers = utils.load_images_and_markers(args.markers_dir)
