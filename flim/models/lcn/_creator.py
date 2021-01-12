@@ -56,7 +56,7 @@ class LCNCreator:
                  markers=None,
                  input_shape=None,
                  batch_size=32,
-                 relabel_markers=True,
+                 relabel_markers=False,
                  device='cpu',
                  superpixels_markers=None,
                  remove_border=0):
