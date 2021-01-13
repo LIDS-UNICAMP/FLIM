@@ -114,6 +114,7 @@ def build_model(architecture,
                 batch_size=32,
                 train_set=None,
                 remove_border=0,
+                relabel_markers=True,
                 device='cpu'):
     torch.manual_seed(42)
     np.random.seed(42)
@@ -125,7 +126,7 @@ def build_model(architecture,
                          markers=markers,
                          input_shape=input_shape,
                          batch_size=batch_size,
-                         relabel_markers=False,
+                         relabel_markers=relabel_markers,
                          remove_border=remove_border,
                          device=device)
 
