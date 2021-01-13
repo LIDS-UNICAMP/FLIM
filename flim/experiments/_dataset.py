@@ -1,5 +1,4 @@
-
-from contextlib import nullcontext
+import warnings
 import os
 
 from torch.utils.data import Dataset
@@ -11,7 +10,10 @@ import numpy as np
 from skimage import io
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
-import pyift.pyift as ift
+try:
+    import pyift.pyift as ift
+except:
+    warnings.warn("PyIFT is not installed.", ImportWarning)
 
 __all__ = ["LIDSDataset"]
 
