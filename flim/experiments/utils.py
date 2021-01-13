@@ -65,7 +65,7 @@ def load_markers(markers_dir):
 
     for line in lines[1:]:
         split_line = line.split(" ")
-        x, y, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
+        y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
 
         markers[x][y] = label
 
