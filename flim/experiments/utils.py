@@ -238,7 +238,8 @@ def train_model(model,
                 step=0,
                 loss_function=nn.CrossEntropyLoss,
                 device='cpu',
-                ignore_label=-100):
+                ignore_label=-100,
+                wandb=None):
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -311,6 +312,9 @@ def train_model(model,
             
         epoch_loss = running_loss/n
         epoch_acc = (running_corrects.double())/n
+        
+        if wandb:
+            wandb.log({"loss": epoch_loss, "train-acc": epoch_acc}, step=epoch)
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
         
