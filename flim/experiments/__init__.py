@@ -2,4 +2,4 @@
 
 from ._dataset import LIDSDataset
 
-__all__ = ["LIDSDataset"]
+__all__ = ["LIDSDataset", "ToTensor"]

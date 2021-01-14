@@ -1,0 +1,38 @@
+{
+    "features": {
+        "type": "sequential",
+        "layers": {
+            "conv": {
+                "operation": "conv2d",
+                "params": {
+                    "kernel_size": 5,
+                    "stride": 1,
+                    "padding": 2,
+                    "dilation": 1,
+                    "number_of_kernels_per_marker": 64
+                }
+            },
+
+            "activation": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+
+            "pool": {
+                "operation": "max_pool2d",
+                "params": {
+                    "kernel_size": 3,
+                    "stride": 1,
+                    "padding": 1
+                }
+            },
+
+            "norm1": {
+                "operation": "batch_norm2d",
+                "params": {}
+            }
+        }
+    }
+}

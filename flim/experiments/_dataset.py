@@ -1,47 +1,74 @@
-
+import warnings
 import os
 
 from torch.utils.data import Dataset
+
+import torch
 
 import numpy as np
 
 from skimage import io
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
+try:
+    import pyift.pyift as ift
+except:
+    warnings.warn("PyIFT is not installed.", ImportWarning)
+
 __all__ = ["LIDSDataset"]
 
 class LIDSDataset(Dataset):
-    def __init__(self, root_dir, split_dir, transform=None):
+    def __init__(self, root_dir, split_dir=None, transform=None):
         self.root_dir = root_dir
         self.split_dir = split_dir
         self.transform = transform
-        
-        self.images_names = self._list_images_files()
+
+        self.images_names = None
+        self.opf_data = None
+        self.opf_labels = None
+
+        if self.root_dir.endswith('.zip'):
+            self.opf_data, self.opf_labels = self._get_data_from_opfdataset()
+        else:
+            self.images_names = self._list_images_files()
     
     def __len__(self):
+        if self.opf_data is not None:
+            return self.opf_data.shape[0]
         return len(self.images_names)
 
     def __getitem__(self, idx):
-        image_path = os.path.join(self.root_dir, self.images_names[idx])
-        image = io.imread(image_path)
-        
-        if image.ndim == 2:
-            image = gray2rgb(image)
-        
-        elif image.shape[2] == 4:
-            image = rgba2rgb(image)
-        
-        image = rgb2lab(image)
-        image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
+        if self.opf_data is None:
+            image_path = os.path.join(self.root_dir, self.images_names[idx])
 
-        image = image.astype(np.float32)
+            if image_path.endswith('mimg'):
+                image = ift.ReadMImage(image_path).AsNumPy().squeeze()
+            
+            else:
+                image = io.imread(image_path)
+            
+            if image.ndim == 2:
+                image = gray2rgb(image)
+            
+            elif image.shape[2] == 4:
+                image = rgba2rgb(image)
+            
+            image = rgb2lab(image)
+            image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
 
-        label = self._label_of_image(self.images_names[idx])
+            image = image.astype(np.float32)
+
+            label = self._label_of_image(self.images_names[idx])
+        
+        else:
+
+            image = self.opf_data[idx]
+            label = self.opf_labels[idx]
         
         if(self.transform):
             image = self.transform(image)
         sample = (image, label)
-        
+
         return sample
 
     def _label_of_image(self, image_name):
@@ -53,10 +80,23 @@ class LIDSDataset(Dataset):
         return label
     
     def _list_images_files(self):
-        with open(self.split_dir, 'r') as f:
-            filenames = f.read()
+        if self.split_dir is not None:
+            with open(self.split_dir, 'r') as f:
+                _filenames = f.read()
+                filenames = [filename for filename in _filenames.split('\n') if len(filename) > 0]
+        else:
+
+            filenames = os.listdir(self.root_dir)
         
-        return [filename for filename in filenames.split('\n') if len(filename) > 0]
+        return filenames
+
+    def _get_data_from_opfdataset(self):
+        opfdataset = ift.ReadDataSet(self.root_dir)
+
+        data = opfdataset.GetData()
+        labels = opfdataset.GetTrueLabels().astype(np.int64) - 1
+
+        return data, labels
         
     def weights_for_balance(self, nclasses):
         weights_dir = os.path.join(self.root_dir, '.weights-for-balance-{}.npy'.format(self.image_list))
@@ -82,3 +122,14 @@ class LIDSDataset(Dataset):
         np.save(weights_dir, weight)
         
         return weight
+
+        labels = opfdataset.GetTrueLabels() - 1
+
+class ToTensor(object):
+    def __call__(self, sample):
+        image = np.array(sample)
+
+        if image.ndim > 3:
+            image = image.transpose((2, 0, 1))
+        
+        return torch.from_numpy(image.copy()).float()

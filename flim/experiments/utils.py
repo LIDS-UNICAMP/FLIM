@@ -65,7 +65,7 @@ def load_markers(markers_dir):
 
     for line in lines[1:]:
         split_line = line.split(" ")
-        x, y, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
+        y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
 
         markers[x][y] = label
 
@@ -114,6 +114,7 @@ def build_model(architecture,
                 batch_size=32,
                 train_set=None,
                 remove_border=0,
+                relabel_markers=True,
                 device='cpu'):
     torch.manual_seed(42)
     np.random.seed(42)
@@ -125,7 +126,7 @@ def build_model(architecture,
                          markers=markers,
                          input_shape=input_shape,
                          batch_size=batch_size,
-                         relabel_markers=False,
+                         relabel_markers=relabel_markers,
                          remove_border=remove_border,
                          device=device)
 
@@ -238,7 +239,8 @@ def train_model(model,
                 loss_function=nn.CrossEntropyLoss,
                 device='cpu',
                 ignore_label=-100,
-                only_classifier=False):
+                only_classifier=False,
+                wandb=None):
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -318,6 +320,9 @@ def train_model(model,
             
         epoch_loss = running_loss/n
         epoch_acc = (running_corrects.double())/n
+        
+        if wandb:
+            wandb.log({"loss": epoch_loss, "train-acc": epoch_acc}, step=epoch)
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
         
@@ -530,6 +535,7 @@ def validate_model(model,
     _calulate_metrics(true_labels, pred_labels)
 
 def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
+    print("Preparing to train SVM")
     clf = svm.LinearSVC(max_iter=max_iter)
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
@@ -547,6 +553,7 @@ def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
     print("Fitting SVM...")
     clf.fit(features.flatten(start_dim=1), y)
 
+    print("Done")
     return clf
 
 def save_svm(clf, outputs_dir, svm_filename):
