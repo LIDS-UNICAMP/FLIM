@@ -57,22 +57,24 @@ class LIDSConvNet(nn.Sequential):
                
             _y = layer.forward(x)
             x = _y
-        b = self._remove_border
-        
-        if b > 0:
-            x = x[:,:, b:-b, b:-b]
-        
-        if x.ndim > 3:
-            x = x.flatten(1)
-        elif x.ndim == 3:
-            x = x.permute(0, 2, 1)
-            # x = x.reshape(-1, x.shape[-1])
-        
-        for layer_name, layer in self.classifier.named_children():
-            if isinstance(layer, nn.Fold):
+
+        if len(self.classifier) > 0:
+            b = self._remove_border
+            
+            if b > 0:
+                x = x[:,:, b:-b, b:-b]
+            
+            if x.ndim > 3:
+                x = x.flatten(1)
+            elif x.ndim == 3:
                 x = x.permute(0, 2, 1)
-            _y = layer.forward(x)
-            x = _y
+                # x = x.reshape(-1, x.shape[-1])
+            
+            for layer_name, layer in self.classifier.named_children():
+                if isinstance(layer, nn.Fold):
+                    x = x.permute(0, 2, 1)
+                _y = layer.forward(x)
+                x = _y
 
         y = x
 
