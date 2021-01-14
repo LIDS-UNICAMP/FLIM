@@ -129,7 +129,7 @@ class ToTensor(object):
     def __call__(self, sample):
         image = np.array(sample)
 
-        if image.ndim > 3:
+        if image.ndim > 2:
             image = image.transpose((2, 0, 1))
         
         return torch.from_numpy(image.copy()).float()

@@ -86,6 +86,7 @@ def _handle_train(args):
                                 input_shape=input_shape,
                                 train_set=dataset,
                                 remove_border=args.remove_border,
+                                relabel_markers=False,
                                 device=device)
     elif architecture is not None:
         model = utils.build_model(architecture,
@@ -93,6 +94,7 @@ def _handle_train(args):
                                 markers,
                                 input_shape=input_shape,
                                 remove_border=args.remove_border,
+                                relabel_markers=False,
                                 device=device)
         
     else:
