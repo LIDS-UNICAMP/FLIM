@@ -1,3 +1,5 @@
+import warnings
+
 import argparse
 
 import napari
@@ -11,7 +13,7 @@ from skimage import util
 from skimage.segmentation import find_boundaries
 
 from magicgui import magicgui
-from magicgui._qt.widgets import QDoubleSlider
+from magicgui.widgets import FloatSlider
 
 from contextlib import contextmanager
 
@@ -23,7 +25,12 @@ from numba import jit, njit
 
 from os import path
 
-import pyift.pyift as ift
+ift = None
+try:
+    import pyift.pyift as ift
+except:
+    warnings.warn("PyIFT is not installed.", ImportWarning)
+
 from skimage.segmentation import boundaries
 
 import torch
@@ -273,41 +280,44 @@ def create_viewer(image_dir,
                 _save_markers(markers, markers_dir)
             print("Markers saved.")
 
+
+        if ift is not None:
         
-        @magicgui(
-            call_button="Propagate markers"
-        )
-        def propagate_markers():
-            markers = viewer.layers['markers'].data
-            new_markers = turn_superpixels_borders_in_markers(super_pixels, markers)
-            viewer.layers['markers'].data = new_markers
+            @magicgui(
+                call_button="Propagate markers"
+            )
+            def propagate_markers():
+                markers = viewer.layers['markers'].data
+                new_markers = turn_superpixels_borders_in_markers(super_pixels, markers)
+                viewer.layers['markers'].data = new_markers
 
+            
+            @magicgui(
+                call_button="Compute superpixels",
+                n_superpixels={"widget_type": FloatSlider, "max": 5000},
+            )
+            def compute_superpixels(n_superpixels=0):
+                nonlocal super_pixels
+                n_superpixels = math.floor(n_superpixels)
+                with wait_cursor(): 
+                    if n_superpixels > 0:
+                        print(n_superpixels)
+                        super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
+                        boundaries = find_boundaries(super_pixels,
+                                                    connectivity=1,
+                                                    mode="inner").astype(np.int)
+                        boundaries[boundaries != 0] = 9
+                        print(boundaries.max())
+                        viewer.layers['superpixels'].data = boundaries
+            
+            compute_superpixels_button = compute_superpixels
+            viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
+
+            propagate_markers_button = propagate_markers
+            viewer.window.add_dock_widget(propagate_markers_button, area="bottom")
         
-        @magicgui(
-            call_button="Compute superpixels",
-            n_superpixels={"widget_type": QDoubleSlider, "maximum": 5000,  'singleStep': 1},
-        )
-        def compute_superpixels(n_superpixels=0):
-            nonlocal super_pixels
-            n_superpixels = math.floor(n_superpixels)
-            with wait_cursor(): 
-                if n_superpixels > 0:
-                    print(n_superpixels)
-                    super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
-                    boundaries = find_boundaries(super_pixels,
-                                                connectivity=1,
-                                                mode="inner").astype(np.int)
-                    boundaries[boundaries != 0] = 9
-                    print(boundaries.max())
-                    viewer.layers['superpixels'].data = boundaries
-  
-        compute_superpixels_button = compute_superpixels.Gui()
-        viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
 
-        propagate_markers_button = propagate_markers.Gui()
-        viewer.window.add_dock_widget(propagate_markers_button, area="bottom")
-
-        save_markers_button = save_markers.Gui()
+        save_markers_button = save_markers
         viewer.window.add_dock_widget(save_markers_button, area="bottom")
     
 
