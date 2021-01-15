@@ -15,7 +15,7 @@ try:
 except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
-__all__ = ["LIDSDataset"]
+__all__ = ["LIDSDataset", "ToTensor"]
 
 class LIDSDataset(Dataset):
     def __init__(self, root_dir, split_dir=None, transform=None):
