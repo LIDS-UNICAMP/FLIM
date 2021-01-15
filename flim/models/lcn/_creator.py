@@ -282,12 +282,14 @@ class LCNCreator:
                         padding = pool_config['params']['padding']
                         kernel_size = pool_config['params']['kernel_size']
                         
+                        if isinstance(kernel_size, int):
+                            kernel_size = [kernel_size, kernel_size]
                         
-                        output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
-                        output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                        output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size[0]-1)/2))//stride
+                        output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size[1]-1)/2))//stride
                         
                         if markers is not None:
-                            markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                            markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
                     operation_params['in_channels'] = last_conv_layer_out_channels
                     
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
@@ -336,11 +338,14 @@ class LCNCreator:
                     else:
                         padding = 0
                     
-                    output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size-1)/2))//stride
-                    output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size-1)/2))//stride
+                    if isinstance(kernel_size, int):
+                        kernel_size = [kernel_size, kernel_size]
+
+                    output_shape[0] = math.floor((output_shape[0] + 2*padding - kernel_size[0])/stride + 1)
+                    output_shape[1] = math.floor((output_shape[1] + 2*padding - kernel_size[1])/stride + 1)
                     
                     if markers is not None:
-                        markers = _pooling_markers(markers, [kernel_size, kernel_size], stride=stride, padding=padding)
+                        markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
                     
                     layer = operation(**operation_params)
                     
@@ -398,6 +403,7 @@ class LCNCreator:
                         # output_shape = list(images.shape)
                 layer.train()
                 module.add_module(key, layer)
+
         output_shape[2] = last_conv_layer_out_channels
         self._output_shape = output_shape
        
@@ -681,8 +687,13 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
     new_markers = []
     for marker in markers:
       indices_x, indices_y = np.where(marker != 0)
+      
+      marker_shape = [*marker.shape]
 
-      new_marker = np.zeros((marker.shape[0]//stride, marker.shape[1]//stride), dtype=np.int)
+      marker_shape[0] = math.floor((marker_shape[0] + 2*padding - kernel_size[0])/stride + 1)
+      marker_shape[1] = math.floor((marker_shape[1] + 2*padding - kernel_size[1])/stride + 1)
+
+      new_marker = np.zeros(marker_shape, dtype=np.int)
       x_limit = marker.shape[0] + 2*padding - kernel_size[0]
       y_limit = marker.shape[1] + 2*padding - kernel_size[1]
       for x, y in zip(indices_x, indices_y):
@@ -692,4 +703,4 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
 
       new_markers.append(new_marker)
 
-    return new_markers
+    return np.array(new_markers)

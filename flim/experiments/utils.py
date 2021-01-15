@@ -222,7 +222,6 @@ def train_mlp(model,
             running_loss += loss.item()*inputs.size(0)/len(train_set)
             running_corrects += torch.sum(preds == labels.data) 
         
-        #scheduler.step()
         epoch_loss = running_loss
         epoch_acc = running_corrects.double()/len(train_set)
 
