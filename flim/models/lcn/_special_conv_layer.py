@@ -256,7 +256,7 @@ class SpecialConvLayer(nn.Module):
         all_labels = np.concatenate((old_markers_labels, labels))
 
         mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True) + 1e-6
         
         self.mean_by_channel = \
             torch.from_numpy(mean_by_channel).float().to(self.device)
@@ -448,7 +448,7 @@ class SpecialConvLayer(nn.Module):
         """
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
-        x = (x - self.mean_by_channel)/(self.std_by_channel + 0.00001)
+        x = (x - self.mean_by_channel)/(self.std_by_channel + 1e-6)
         
         for _, layer in self.named_children():
             x = layer.forward(x)
@@ -486,7 +486,7 @@ class SpecialConvLayer(nn.Module):
                                                  self.in_channels)
 
         mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True) + 1e-6
         
         self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
         self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
