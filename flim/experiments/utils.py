@@ -273,7 +273,7 @@ def train_model(model,
     optimizer = optim.Adam(parameters)
     if step > 0:
         scheduler = optim.lr_scheduler.StepLR(optimizer,
-                                            step_size=15,
+                                            step_size=step,
                                             gamma=0.1)
   
     #training
@@ -325,8 +325,8 @@ def train_model(model,
 
         print('Loss: {:.6f} Acc: {:.6f}'.format(epoch_loss, epoch_acc))
         
-        if epoch_acc >= 0.9900000:
-            break
+        #if epoch_acc >= 0.9900000:
+        #    break
 
 
 def save_model(model, outputs_dir, model_filename):
