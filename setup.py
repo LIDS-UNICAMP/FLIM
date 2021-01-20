@@ -14,7 +14,7 @@ setuptools.setup(
     description='A package to build deep learning models from images markers.',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/italosestilon/FLIM",
+    url="https://github.com/LIDS-UNICAMP/FLIM",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
