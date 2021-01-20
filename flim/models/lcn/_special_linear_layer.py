@@ -59,7 +59,7 @@ class SpecialLinearLayer(nn.Module):
     def _calculate_weights(self, patches, labels, kernels_per_label=0.8):
 
         mean = patches.mean(axis=0, keepdims=True)
-        std = patches.std(axis=0, keepdims=True)
+        std = patches.std(axis=0, keepdims=True) + 1e-6
         
         self.mean = \
             torch.from_numpy(mean).float().to(self.device)

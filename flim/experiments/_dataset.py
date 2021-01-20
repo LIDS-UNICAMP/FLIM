@@ -1,5 +1,4 @@
-
-from contextlib import nullcontext
+import warnings
 import os
 
 from torch.utils.data import Dataset
@@ -11,9 +10,12 @@ import numpy as np
 from skimage import io
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
-import pyift.pyift as ift
+try:
+    import pyift.pyift as ift
+except:
+    warnings.warn("PyIFT is not installed.", ImportWarning)
 
-__all__ = ["LIDSDataset"]
+__all__ = ["LIDSDataset", "ToTensor"]
 
 class LIDSDataset(Dataset):
     def __init__(self, root_dir, split_dir=None, transform=None):
@@ -127,7 +129,7 @@ class ToTensor(object):
     def __call__(self, sample):
         image = np.array(sample)
 
-        if image.ndim > 3:
+        if image.ndim > 2:
             image = image.transpose((2, 0, 1))
         
         return torch.from_numpy(image.copy()).float()

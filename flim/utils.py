@@ -10,17 +10,17 @@ from scipy.ndimage import label
 __all__ = ['label_connected_components']
 
 
-def label_connected_components(label_image, start_label=1):
+def label_connected_components(label_images, start_label=1):
     """Label connected components in a label image.
 
-    Create a new label image where labels are changed so that each \
+    Create new label images where labels are changed so that each \
     connected componnent has a diffetent label. \
     To find the connected components, it is used a 8-neighborhood.
 
     Parameters
     ----------
-    label_image : ndarray
-        Label image with size :math:`(H, W)`.
+    label_images : ndarray
+        Label images with size :math:`(N, H, W)`.
 
     start_labeel: int
         First label, by default 1.
@@ -28,24 +28,30 @@ def label_connected_components(label_image, start_label=1):
     Returns
     -------
     ndarray
-        A label image with new labels.
+        Label images with new labels.
 
     """
-    label_image = label_image.squeeze()
+    # label_image = label_image.squeeze()
 
-    num_labels = label_image.astype(np.int32).max()
+    if label_images.ndim == 2:
+        label_images = np.expand_dims(label_images, 0)
 
-    new_label_image = np.zeros_like(label_image).astype(np.int)
-    structure = np.ones((3, 3), dtype=np.uint8)
+    new_label_images = np.zeros_like(label_images).astype(np.int)
 
-    _c = start_label
+    for label_image, new_label_image in zip(label_images, new_label_images):
+        num_labels = label_image.astype(np.int32).max()
 
-    for _l in range(1, num_labels + 1):
-        _label_image = label(label_image == _l, structure=structure)[0]
+        #new_label_image = np.zeros_like(label_image).astype(np.int)
+        structure = np.ones((3, 3), dtype=np.uint8)
 
-        for new_l in range(1, _label_image.max() + 1):
-            mask = _label_image == new_l
-            new_label_image[mask] = _c
-            _c += 1
+        _c = start_label
 
-    return np.expand_dims(new_label_image, 0)
+        for _l in range(1, num_labels + 1):
+            _label_image = label(label_image == _l, structure=structure)[0]
+
+            for new_l in range(1, _label_image.max() + 1):
+                mask = _label_image == new_l
+                new_label_image[mask] = _c
+                _c += 1
+
+    return new_label_images
