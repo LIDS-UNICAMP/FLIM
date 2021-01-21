@@ -42,8 +42,8 @@ from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSC
 from ._dataset import LIDSDataset
 
 def load_image(image_dir):
-    image = (io.imread(image_dir)
-    
+    image = io.imread(image_dir)
+
     if image.ndim == 4:
         image = rgba2rgb(image)
     elif image.ndim == 1:
