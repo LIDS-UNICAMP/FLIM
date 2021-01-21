@@ -44,9 +44,9 @@ from ._dataset import LIDSDataset
 def load_image(image_dir):
     image = io.imread(image_dir)
 
-    if image.ndim == 4:
+    if image.shape[-1] == 4:
         image = rgba2rgb(image)
-    elif image.ndim == 1:
+    elif image.shape[-1] == 1:
         image = gray2rgb(image)
 
     image = rgb2lab(image)
