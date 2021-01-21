@@ -12,6 +12,7 @@ from skimage.color import rgb2lab
 import numpy as np
 
 from numba import njit
+from skimage.color.colorconv import gray2rgb, rgba2rgb
 from sklearn.metrics.pairwise import _return_float_dtype
 
 import torch
@@ -41,7 +42,15 @@ from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSC
 from ._dataset import LIDSDataset
 
 def load_image(image_dir):
-    image = rgb2lab(io.imread(image_dir))
+    image = (io.imread(image_dir)
+    
+    if image.ndim == 4:
+        image = rgba2rgb(image)
+    elif image.ndim == 1:
+        image = gray2rgb(image)
+
+    image = rgb2lab(image)
+    
     image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
     return image
 
