@@ -433,7 +433,11 @@ def get_arguments():
     parser_explain.set_defaults(func=handle_explain)
     
     args = parser.parse_args()
-    args.func(args)
+
+    if hasattr(args, 'func'):
+        args.func(args)
+    else:
+        print("Run train -h for help.")
     
     return args
 
