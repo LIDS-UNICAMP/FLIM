@@ -130,6 +130,15 @@ def _handle_train(args):
     utils.save_model(model, args.outputs_dir, args.model_filename)
     utils.save_lids_model(model, args.outputs_dir, args.model_filename)
 
+    if args.intermediate:
+        utils.save_intermediate_outputs(model,
+                                        dataset,
+                                        args.outputs_dir,
+                                        batch_size=args.batch_size,
+                                        format=args.format,
+                                        layers=args.layers,
+                                        device=device)
+
 def _handle_select(args):
     select_images_to_put_markers(args.dataset_dir,
                                  args.split,
@@ -181,7 +190,12 @@ def handle_explain(args):
     image_indices = args.image_indices
     
     if args.intermediate:
-        utils.get_intermediate_outputs(model, dataset, args.outputs_dir, device=device)
+        utils.get_intermediate_outputs(model,
+                                       dataset,
+                                       args.outputs_dir,
+                                       batch_size=args.batch_size,
+                                       format=args.format,
+                                       device=device)
     
     outputs_dir = os.path.join(args.outputs_dir, "CAMs")
     if not os.path.exists(outputs_dir):
@@ -317,6 +331,21 @@ def get_arguments():
                               "--pretrained",
                               help="Use pretrained weigths",
                               action="store_true")
+
+    parser_train.add_argument("-i",
+                             "--intermediate",
+                             help="Save the output of intermediate layers",
+                             action="store_true")
+
+    parser_train.add_argument("-f",
+                              "--format",
+                              help="Format to save intermediate layers output",
+                              choices=['zip', 'mimg', 'npy'])
+
+    parser_train.add_argument("-l",
+                              "--layers",
+                              help="Save the output of these layers.",
+                              nargs='*',)
 
     parser_train.set_defaults(func=_handle_train)
 

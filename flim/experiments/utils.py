@@ -3,6 +3,8 @@ from logging import root
 
 import os
 from typing import cast
+from warnings import catch_warnings
+import warnings
 
 from numpy.lib.function_base import average
 
@@ -40,6 +42,14 @@ from skimage.color import lab2rgb
 
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
+
+ift = None
+
+try:
+    import pyift.pyift as ift
+except:
+    warnings.warn("PyIFT is not installed.", ImportWarning)
+
 
 def load_image(image_dir):
     image = io.imread(image_dir)
@@ -191,7 +201,7 @@ def train_mlp(model,
               device='cpu'):
 
 
-    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
 
     model.to(device)
     model.feature_extractor.eval()
@@ -508,7 +518,8 @@ def validate_model(model,
 
     dataloader = DataLoader(val_set,
                             batch_size=batch_size,
-                            shuffle=True)
+                            shuffle=True,
+                            drop_last=False)
 
     model.eval()
     model.to(device)
@@ -545,7 +556,7 @@ def validate_model(model,
 def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
     print("Preparing to train SVM")
     clf = svm.LinearSVC(max_iter=max_iter)
-    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False, drop_last=False)
 
     model.eval()
     model.to(device)
@@ -578,7 +589,7 @@ def load_svm(svm_path):
     return clf
 
 def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
-    dataloader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(val_set, batch_size=batch_size, shuffle=False, drop_last=False)
 
     model.eval()
     model.to(device)
@@ -629,7 +640,7 @@ def _find_elems_in_array(a, elems):
 
 
 def select_images_to_put_markers(dataset, class_proportion=0.05):
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=False, drop_last=False)
 
     all_images = None
     all_labels = None
@@ -771,9 +782,33 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
     cam = cam - cam.min()
     cam = cam/cam.max()
     return cam.cpu().numpy()
+
+def load_mimage(path):
+    assert ift is not None, "PyIFT is not available"
+
+    mimge = ift.ReadMImage(path)
+
+    return mimge.AsNumPy().squeeze()
+
+def save_mimgage(path, image):
+    assert ift is not None, "PyIFT is not available"
     
-    
-def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device='cpu', only_features=True):
+    mimage = ift.CreateMImageFromNumPy(image)
+    ift.WriteMImage(mimage, path)
+
+def save_opf_dataset(path, opf_dataset):
+    assert ift is not None, "PyIFT is not available"
+
+    ift.WriteDataSet(opf_dataset, path)
+
+def load_opf_dataset(path):
+    assert ift is not None, "PyIFT is not available"
+
+    opf_dataset = ift.ReadDataSet(path)
+
+    return opf_dataset
+        
+def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers=None, only_features=True, format="mimg", device='cpu'):
     
     if only_features:
         if hasattr(model, "features"):
@@ -786,9 +821,10 @@ def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device=
     _model.eval()
     _model.to(device)
     
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False)
     
     outputs = {}
+    outputs_names = dataset.images_names
     
     for inputs, _ in dataloader:
         
@@ -798,30 +834,48 @@ def get_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, device=
             _outputs = layer(inputs)
             inputs = _outputs
             
-            if layer_name not in outputs:
-                outputs[layer_name] = []
-            for _output in _outputs:
-                outputs[layer_name].append(_output.detach().cpu())
+            if layers is None or len(layers) == 0 or layer_name in layers:
+                if layer_name not in outputs:
+                    outputs[layer_name] = _outputs.detach().cpu()
+                else:
+                    outputs[layer_name] = torch.cat((outputs[layer_name],_outputs.detach().cpu()))
+
 
     print("Saving intermediate outputs...")
+
     for layer_name in outputs:
         layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
-        
+
         if not os.path.exists(layer_dir):
             os.makedirs(layer_dir)
             
         _outputs = outputs[layer_name]
-        
-        for i, _output in  enumerate(_outputs):
-            _output_dir = os.path.join(layer_dir, f"{i}.npy")
-            
-            np.save(_output_dir, _output)
                 
-        
+        if format == 'zip':
+
+            _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
+
+            labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
+
+            opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
+
+            opf_dataset.SetNClasses = labels.max() + 1
+
+            ift.SetStatus(opf_dataset, ift.IFT_TRAIN)
+            ift.AddStatus(opf_dataset, ift.IFT_SUPERVISED)
             
 
+            # opf_dataset.SetLabels(labels + 1)
 
-    
+            _output_dir = os.path.join(layer_dir, "dataset.zip")
+            save_opf_dataset(_output_dir, opf_dataset)
 
-    
-
+        elif format in ["mimg", "npy"]:
+            for _name, _output in  zip(outputs_names, _outputs):
+                print(_output.shape)
+                _output_dir = os.path.join(layer_dir, f"{_name.split('.')[0]}.{format}")
+                
+                if format == "npy":
+                    np.save(_output_dir, _output)
+                else:
+                    save_mimgage(_output_dir, _output.permute(1, 2, 0).numpy())

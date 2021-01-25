@@ -18,11 +18,12 @@ except:
 __all__ = ["LIDSDataset", "ToTensor"]
 
 class LIDSDataset(Dataset):
-    def __init__(self, root_dir, split_dir=None, transform=None):
+    def __init__(self, root_dir, split_dir=None, transform=None, return_name=False):
         self.root_dir = root_dir
         self.split_dir = split_dir
         self.transform = transform
 
+        self.return_name = return_name
         self.images_names = None
         self.opf_data = None
         self.opf_labels = None
@@ -67,7 +68,11 @@ class LIDSDataset(Dataset):
         
         if(self.transform):
             image = self.transform(image)
-        sample = (image, label)
+
+        if self.return_name:
+            sample = (image, label, self.images_names[idx])
+        else:
+            sample = (image, label)
 
         return sample
 
@@ -123,7 +128,6 @@ class LIDSDataset(Dataset):
         
         return weight
 
-        labels = opfdataset.GetTrueLabels() - 1
 
 class ToTensor(object):
     def __call__(self, sample):
