@@ -109,12 +109,8 @@ class SpecialConvLayer(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.bias = bias
-        
-        if out_channels is not None:
-            self.out_channels = out_channels
-        else:
-            self.out_channels = number_of_kernels_per_marker
-    
+        self.out_channels = out_channels
+
         self._activation_config = activation_config
         self._pool_config = pool_config
         self.number_of_kernels_per_marker = number_of_kernels_per_marker
@@ -167,6 +163,10 @@ class SpecialConvLayer(nn.Module):
         elif images is not None and markers is not None:
             kernels_weights = self._calculate_weights(images, markers)
             kernels_weights = np.rollaxis(kernels_weights, 3, 1)
+
+            if self.out_channels is not None and self.out_channels > kernels_weights.shape[0]:
+                kernels_weights = _select_kernels_with_pca(kernels_weights, self.out_channels)
+
         else:
             kernels_weights = torch.rand(kernels_number,
                                          self.in_channels,
@@ -699,6 +699,11 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
 
     kernels = _enforce_norm(_create_random_kernels(n, in_channels, kernel_size))
 
+    kernels_pca = _select_kernels_with_pca(kernels, k)
+
+    return kernels_pca
+
+def _select_kernels_with_pca(kernels, k):
     kernels_shape = kernels.shape
 
     kernels_flatted = kernels.reshape(kernels_shape[0], -1)
