@@ -7,7 +7,9 @@ import numpy as np
 
 from scipy.ndimage import label
 
-__all__ = ['label_connected_components']
+import torch
+
+__all__ = ['label_connected_components', 'compute_importance']
 
 
 def label_connected_components(label_images, start_label=1):
@@ -55,3 +57,61 @@ def label_connected_components(label_images, start_label=1):
                 _c += 1
 
     return new_label_images
+
+def _normalize_image(image):
+    f = image
+    
+    max = f.max()
+    min = f.min()
+    if max - min > 0:
+        f = image
+        f = 1*(f - min)/(max - min)
+    elif max > 0:
+        f = f/max
+
+    return f
+
+def _compute_channel_importance(image_features, image_markers, label):
+    importance_to_label = {}
+    num_channels = image_features[0].shape[0]
+
+    pos_act_by_channel = np.zeros(num_channels)
+    neg_act_by_channel = np.zeros(num_channels)
+
+    importance_to_label = np.zeros(num_channels)
+    num_label_pixels = 0
+    num_other_label_pixels = 0
+
+    for features, markers in zip(image_features, image_markers):
+        other_label_mask = np.logical_and(markers != label, markers != 0)
+        label_mask = markers == label
+        num_label_pixels += label_mask.sum()
+        num_other_label_pixels += other_label_mask.sum()
+
+        for i, channel in enumerate(features):
+            _channel = _normalize_image(channel)
+            pos_act_by_channel[i] = (_channel[label_mask].sum())
+            neg_act_by_channel[i] = 1 - _channel[other_label_mask].sum()
+
+    # reg_factor_pos = 1 - num_label_pixels/(num_label_pixels + num_other_label_pixels)
+    # reg_factor_neg = 1 - reg_factor_pos
+
+    importance_to_label = pos_act_by_channel + neg_act_by_channel
+    importance_to_label = importance_to_label - importance_to_label.mean()
+    
+    #importance_to_label = importance_to_label/np.linalg.norm(importance_to_label)
+
+    return importance_to_label
+
+
+def compute_importance(images, markers, n_classes):
+    
+    importance_by_channel = []
+
+    images = images.transpose(0, 3, 1, 2)
+
+    for label in range(n_classes):
+
+        importance_by_channel.append(_compute_channel_importance(images, markers, label+1))
+
+    return np.array(importance_by_channel)

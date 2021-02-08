@@ -12,6 +12,7 @@ from torch.nn.modules import module
 from ._special_conv_layer import SpecialConvLayer
 from._special_linear_layer import SpecialLinearLayer
 from ._lcn import LIDSConvNet, ParallelModule
+from ._decoder import Decoder
 
 from ...utils import label_connected_components
 
@@ -26,7 +27,8 @@ __operations__ = {
     "dropout": nn.Dropout,
     "adap_avg_pool2d": nn.AdaptiveAvgPool2d,
     "unfold": nn.Unfold,
-    "fold": nn.Fold
+    "fold": nn.Fold,
+    "decoder": Decoder
 }
 
 
@@ -378,10 +380,13 @@ class LCNCreator:
 
                     last_conv_layer_out_channels = output.shape[1]
 
-                    
+                elif layer_config['operation'] == 'decoder':
+                    layer = operation(images, markers, device=device, **operation_params)
+                    layer.to(device)
+
                 else:
                     layer = operation(**operation_params)
-
+                    
                 if images is not None and markers is not None:    
                     torch_images = torch.Tensor(images)
 
