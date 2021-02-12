@@ -70,6 +70,7 @@ class SpecialConvLayer(nn.Module):
                  dilation=1,
                  number_of_kernels_per_marker=16,
                  use_random_kernels=False,
+                 use_pca=False,
                  activation_config=None,
                  pool_config=None,
                  device='cpu'):
@@ -120,6 +121,7 @@ class SpecialConvLayer(nn.Module):
         self._pool = None
         
         self._use_random_kernels = use_random_kernels
+        self._use_pca = use_pca
 
         #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
         #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
@@ -164,8 +166,10 @@ class SpecialConvLayer(nn.Module):
             kernels_weights = self._calculate_weights(images, markers)
             kernels_weights = np.rollaxis(kernels_weights, 3, 1)
 
-            if self.out_channels is not None and self.out_channels > kernels_weights.shape[0]:
+            if self._use_pca and self.out_channels is not None and self.out_channels < kernels_weights.shape[0]:
                 kernels_weights = _select_kernels_with_pca(kernels_weights, self.out_channels)
+            elif self.out_channels is not None and self.out_channels < kernels_weights.shape[0]:
+                kernels_weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), self.out_channels)
 
         else:
             kernels_weights = torch.rand(kernels_number,
