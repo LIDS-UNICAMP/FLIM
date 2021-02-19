@@ -13,7 +13,7 @@ class Decoder(nn.Module):
         self.n_classes = n_classes
         self.device = device
 
-        self.register_buffer('importance_by_channel', torch.from_numpy(compute_importance(images, markers, n_classes)))
+        self.register_buffer('importance_by_channel', torch.from_numpy(compute_importance(images, markers, n_classes)).float())
 
     
     def forward(self, X):
