@@ -817,6 +817,13 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
             _model = model.feature_extractor
     else:
         _model = model
+
+
+    for layer_name in layers:
+        layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
+
+        if not os.path.exists(layer_dir):
+            os.makedirs(layer_dir)
     
     _model.eval()
     _model.to(device)
@@ -824,6 +831,7 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False)
     
     outputs = {}
+    outputs_count = {}
     outputs_names = dataset.images_names
     
     for inputs, _ in dataloader:
@@ -833,22 +841,33 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
         for layer_name, layer in _model.named_children():
             _outputs = layer(inputs)
             inputs = _outputs
+
+            if layer_name not in outputs_count:
+                outputs_count[layer_name] = 0
             
             if layers is None or len(layers) == 0 or layer_name in layers:
-                if layer_name not in outputs:
-                    outputs[layer_name] = _outputs.detach().cpu()
+                if format == 'zip':
+                    if layer_name not in outputs:
+                            outputs[layer_name] = _outputs.detach().cpu()        
+                    else:
+                        outputs[layer_name] = torch.cat((outputs[layer_name],_outputs.detach().cpu()))
                 else:
-                    outputs[layer_name] = torch.cat((outputs[layer_name],_outputs.detach().cpu()))
+                    layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
+                    for _output in _outputs.detach().cpu():
+                            _output_dir = os.path.join(layer_dir, f"{outputs_names[outputs_count[layer_name]].split('.')[0]}.{format}")
+                    
+                            if format == "npy":
+                                np.save(_output_dir, _output)
+                            else:
+                                save_mimgage(_output_dir, _output.permute(1, 2, 0).numpy())
+
+                            outputs_count[layer_name] += 1
 
         torch.cuda.empty_cache()
-        
+
     print("Saving intermediate outputs...")
 
     for layer_name in outputs:
-        layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
-
-        if not os.path.exists(layer_dir):
-            os.makedirs(layer_dir)
             
         _outputs = outputs[layer_name]
                 
@@ -871,7 +890,7 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
             _output_dir = os.path.join(layer_dir, "dataset.zip")
             save_opf_dataset(_output_dir, opf_dataset)
 
-        elif format in ["mimg", "npy"]:
+        '''elif format in ["mimg", "npy"]:
             for _name, _output in  zip(outputs_names, _outputs):
                 
                 _output_dir = os.path.join(layer_dir, f"{_name.split('.')[0]}.{format}")
@@ -879,4 +898,4 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
                 if format == "npy":
                     np.save(_output_dir, _output)
                 else:
-                    save_mimgage(_output_dir, _output.permute(1, 2, 0).numpy())
+                    save_mimgage(_output_dir, _output.permute(1, 2, 0).numpy())'''
