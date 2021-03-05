@@ -840,7 +840,8 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
                 else:
                     outputs[layer_name] = torch.cat((outputs[layer_name],_outputs.detach().cpu()))
 
-
+        torch.cuda.empty_cache()
+        
     print("Saving intermediate outputs...")
 
     for layer_name in outputs:
@@ -872,7 +873,7 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
 
         elif format in ["mimg", "npy"]:
             for _name, _output in  zip(outputs_names, _outputs):
-                print(_output.shape)
+                
                 _output_dir = os.path.join(layer_dir, f"{_name.split('.')[0]}.{format}")
                 
                 if format == "npy":

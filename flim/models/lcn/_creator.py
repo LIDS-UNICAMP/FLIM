@@ -163,6 +163,8 @@ class LCNCreator:
 
             self.LCN.feature_extractor = module
 
+        torch.cuda.empty_cache()
+
     def load_model(self, state_dict):
         architecture = self._architecture
 
@@ -502,7 +504,7 @@ class LCNCreator:
                     m._linear.weight.data.normal_(0, 0.01)
                     if m._linear.bias is not None:
                         nn.init.constant_(m._linear.bias, 0)   
-
+        torch.cuda.empty_cache()
 
     def update_model(self,
                      model,
