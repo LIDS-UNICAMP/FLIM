@@ -434,7 +434,7 @@ def load_lids_model(model, lids_model_dir, architecture):
     print("Finish loading...")     
     return model
 
-def save_lids_model(model, outputs_dir, model_name):
+def save_lids_model(model, architecture, split, outputs_dir, model_name):
     if not isinstance(model, LIDSConvNet):
         pass
     
@@ -445,8 +445,10 @@ def save_lids_model(model, outputs_dir, model_name):
         
     if not os.path.exists(os.path.join(outputs_dir, model_name)):
         os.makedirs(os.path.join(outputs_dir, model_name))
-    
-    for name, layer in model.feature_extractor.named_children():
+
+    layer_specs = get_arch_in_lids_format(architecture, split)
+    conv_count = 1
+    for _, layer in model.feature_extractor.named_children():
         if isinstance(layer, SpecialConvLayer):
             weights = layer.conv.weight.detach().cpu()
 
@@ -461,11 +463,19 @@ def save_lids_model(model, outputs_dir, model_name):
             mean = mean.reshape(1, -1)
             std = std.reshape(1, -1)
 
-            np.save(os.path.join(outputs_dir, model_name, f"{name}-kernels.npy"), weights.float())
-            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
-            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+            np.save(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}-std.txt"), std.float())
+
+            conv_count += 1
+
     
-    for name, layer in model.classifier.named_children():
+    for i, layer_spec in enumerate(layer_specs, 1):
+
+        with open(os.path.join(outputs_dir, model_name, f"convlayerseeds-layer{i}.json"), 'w') as f:
+            json.dump(layer_spec, f,  indent=4)
+    
+    '''for name, layer in model.classifier.named_children():
         if isinstance(layer, SpecialLinearLayer):
             weights = layer._linear.weight.detach().cpu()
             
@@ -479,7 +489,7 @@ def save_lids_model(model, outputs_dir, model_name):
             
             np.save(os.path.join(outputs_dir, model_name, f"{name}-weights.npy"), weights.float())
             np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
-            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())'''
             
 
 def _calulate_metrics(true_labels, pred_labels):
@@ -833,6 +843,8 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
     outputs = {}
     outputs_count = {}
     outputs_names = dataset.images_names
+
+    print("Saving intermediate outputs...")
     
     for inputs, _ in dataloader:
         
@@ -851,9 +863,11 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
                             outputs[layer_name] = _outputs.detach().cpu()        
                     else:
                         outputs[layer_name] = torch.cat((outputs[layer_name],_outputs.detach().cpu()))
-                else:
+                elif format in ["mimg", "npy"]:
                     layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
-                    for _output in _outputs.detach().cpu():
+                    _outputs = _outputs.detach().cpu()
+
+                    for _output in _outputs:
                             _output_dir = os.path.join(layer_dir, f"{outputs_names[outputs_count[layer_name]].split('.')[0]}.{format}")
                     
                             if format == "npy":
@@ -863,39 +877,109 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
 
                             outputs_count[layer_name] += 1
 
+                    del _outputs
+
         torch.cuda.empty_cache()
 
-    print("Saving intermediate outputs...")
-
-    for layer_name in outputs:
-            
-        _outputs = outputs[layer_name]
+    if format == 'zip':
+        for layer_name in outputs:
                 
-        if format == 'zip':
+            _outputs = outputs[layer_name]
+                    
+            if format == 'zip':
 
-            _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
+                _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
 
-            labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
+                labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
 
-            opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
+                opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
 
-            opf_dataset.SetNClasses = labels.max() + 1
+                opf_dataset.SetNClasses = labels.max() + 1
 
-            ift.SetStatus(opf_dataset, ift.IFT_TRAIN)
-            ift.AddStatus(opf_dataset, ift.IFT_SUPERVISED)
-            
-
-            # opf_dataset.SetLabels(labels + 1)
-
-            _output_dir = os.path.join(layer_dir, "dataset.zip")
-            save_opf_dataset(_output_dir, opf_dataset)
-
-        '''elif format in ["mimg", "npy"]:
-            for _name, _output in  zip(outputs_names, _outputs):
+                ift.SetStatus(opf_dataset, ift.IFT_TRAIN)
+                ift.AddStatus(opf_dataset, ift.IFT_SUPERVISED)
                 
-                _output_dir = os.path.join(layer_dir, f"{_name.split('.')[0]}.{format}")
-                
-                if format == "npy":
-                    np.save(_output_dir, _output)
-                else:
-                    save_mimgage(_output_dir, _output.permute(1, 2, 0).numpy())'''
+
+                # opf_dataset.SetLabels(labels + 1)
+
+                _output_dir = os.path.join(layer_dir, "dataset.zip")
+                save_opf_dataset(_output_dir, opf_dataset)
+
+def get_arch_in_lids_format(architecture, split):
+
+    layer_names = list(architecture['features']['layers'].keys())
+
+    layers = architecture['features']['layers']
+
+    operations = [layers[layer_name]['operation'] for layer_name in layer_names]
+    conv_layers_count = 1
+
+    lids_layer_specs = []
+    for i in range(len(layer_names)):
+        layer_spec = {}
+        if operations[i] == 'conv2d':
+
+            params = layers[layer_names[i]]['params']
+            kernel_size = params['kernel_size']
+            dilation = params['kernel_size']
+            number_of_kernels_per_markers = params['number_of_kernels_per_marker']
+            out_channels = params['out_channels']
+
+            layer_spec['layer'] = conv_layers_count
+            layer_spec['split'] = split
+
+            if isinstance(kernel_size, int):
+                layer_spec['kernelsize'] = [kernel_size, kernel_size, 0]
+            else:
+                layer_spec['kernelsize'] = [*kernel_size, 0]
+    
+            if isinstance(dilation, int):
+                layer_spec['dilationrate'] = [dilation, dilation, 0]
+            else:
+                layer_spec['dilationrate'] = [*dilation, 0]
+
+
+            layer_spec['nkernelspermarker'] = number_of_kernels_per_markers
+            layer_spec['finalnkernels'] = out_channels
+            layer_spec['nkernelsperimage'] = 10000
+
+            if i + 1 < len(layer_names) and operations[i+1] == 'relu':
+                layer_spec['relu'] = 1
+            else:
+                layer_spec['relu'] = 0
+        
+            conv_layers_count += 1
+
+            j = i + 1 if layer_spec['relu'] == 0 else i + 2
+
+            pool_spec = {}
+
+            if j < len(layer_names) and 'pool' in operations[j]:
+                if operations[j] == 'max_pool2d':
+                    pool_spec['pool_type'] = 1
+                elif operations[j] == 'avg_pool2d':
+                    pool_spec['pool_type'] = 2
+
+                pool_params = layers[layer_names[j]]['params']
+
+                kernel_size = pool_params['kernel_size']
+                stride = pool_params['stride']
+
+                if isinstance(kernel_size, int):
+                    kernel_size = [kernel_size, kernel_size]
+
+                pool_spec['poolxsize'] = kernel_size[0]
+                pool_spec['poolysize'] = kernel_size[1]
+                pool_spec['poolzsize'] = 0
+
+                pool_spec['stride'] = stride
+            else:
+                pool_spec['pool_type'] = 0
+
+            layer_spec['pooling'] = pool_spec
+
+
+            lids_layer_specs.append(layer_spec)
+    
+    return lids_layer_specs
+
