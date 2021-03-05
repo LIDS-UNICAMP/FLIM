@@ -61,22 +61,23 @@ An example of a feature extractor:
                     "padding": 2,
                     "dilation": 1,
                     "number_of_kernels_per_marker": 8
-                },
-                "activation": {
-                    "operation": "relu",
-                    "params": {
-                        "inplace": true
-                    }
-                },
-                "pool": {
-                    "operation": "max_pool2d",
-                    "params": {
-                        "kernel_size": 3,
-                        "stride": 4,
-                        "padding": 0
-                    }
                 }
             },
+            "activation": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+
+            "pool": {
+                "operation": "max_pool2d",
+                "params": {
+                    "kernel_size": 3,
+                    "stride": 4,
+                    "padding": 0
+                }
+            }
         }
     }
 ```
@@ -151,13 +152,21 @@ The available tools are `train` and` validate`. For a description of the paramet
 Following, there are usage examples for each tool:
 
 ```
-train train -d lids-dataset -s train_split.txt -a arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
+train train -d lids-dataset -ts train_split.txt -a arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
 ```
 
 ```
-validate -d lids-dataset -s val_split.txt -a arch.json -mp outputs-dir/trained-model.pt -g 0
+validate -d lids-dataset -vs val_split.txt -a arch.json -mp outputs-dir/trained-model.pt -g 0
 ```
+
+To save the output of intermediate layers, run:
+
+```
+train train -md markers/ -d lids-dataset/ -ts train.txt -ad arch.json -g 0 -od outputs -mn model.pt -i -f zip -l layer_name1 layer_name2
+```
+
+The possible formats are OPFDataset (zip), MImage (mimg), and NumPy array (npy).
 
 The dataset must be in LIDS format. It is also possible to train an SVM model by running `train` passing the `-s` argument.
 
-Please, feel free to give feedback and to contribute. If you have any quention, you can open an issue requesting help or you can contact me.
+Please, feel free to give feedback and to contribute. If you have any question, you can open an issue requesting help or you can contact me.

@@ -383,7 +383,7 @@ class LCNCreator:
                     last_conv_layer_out_channels = output.shape[1]
 
                 elif layer_config['operation'] == 'decoder':
-                    layer = operation(images, markers, device=device, **operation_params)
+                    layer = operation(images, self._markers, device=device, **operation_params)
                     layer.to(device)
 
                 else:

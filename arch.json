@@ -10,20 +10,20 @@
                     "padding": 2,
                     "dilation": 1,
                     "number_of_kernels_per_marker": 8
-                },
-                "activation": {
-                    "operation": "relu",
-                    "params": {
-                        "inplace": true
-                    }
-                },
-                "pool": {
-                    "operation": "max_pool2d",
-                    "params": {
-                        "kernel_size": 3,
-                        "stride": 4,
-                        "padding": 0
-                    }
+                }
+            },
+            "activation": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+            "pool": {
+                "operation": "max_pool2d",
+                "params": {
+                    "kernel_size": 3,
+                    "stride": 4,
+                    "padding": 0
                 }
             },
 
