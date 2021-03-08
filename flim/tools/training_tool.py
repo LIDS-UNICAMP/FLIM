@@ -213,6 +213,14 @@ def handle_explain(args):
         image = utils.image_to_rgb(image.permute(1,2,0))
         io.imsave(os.path.join(outputs_dir, image_name), c_cam[0][:, :, :3] + image)
 
+
+def handle_arch(args):
+    layers_spec_dir = args.layers_spec_dir
+
+    arch = utils.create_arch(layers_spec_dir)
+
+    utils.save_arch(arch, args.architecture_path)
+
 def get_arguments():
     parser = argparse.ArgumentParser()
 
@@ -460,6 +468,21 @@ def get_arguments():
                                 action="store_true")
     
     parser_explain.set_defaults(func=handle_explain)
+
+
+    parser_arch = subparsers.add_parser('arch',
+                                        help='Architecture model.')
+
+    parser_arch.add_argument("-l",
+                             "--layers-spec-dir",
+                             help="Layers directory.")
+
+    parser_arch.add_argument("-a",
+                             "--architecture-path",
+                             help="Architecture path.")
+
+    
+    parser_arch.set_defaults(func=handle_arch)
     
     args = parser.parse_args()
 

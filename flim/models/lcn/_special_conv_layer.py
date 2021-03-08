@@ -105,10 +105,24 @@ class SpecialConvLayer(nn.Module):
         super(SpecialConvLayer, self).__init__()
 
         self.in_channels = in_channels
-        self.kernel_size = kernel_size
-        self.padding = padding
+
+        if isinstance(kernel_size, int):
+            self.kernel_size = [kernel_size, kernel_size]
+        else:
+            self.kernel_size = kernel_size
+
+        if isinstance(padding, int):
+            self.padding = [padding, padding]
+        else:
+            self.padding = padding
+
         self.stride = stride
-        self.dilation = dilation
+
+        if isinstance(dilation, int):
+            self.dilation = [dilation, dilation]
+        else:
+            self.dilation = dilation
+
         self.bias = bias
         self.out_channels = out_channels
 
@@ -551,18 +565,23 @@ class SpecialConvLayer(nn.Module):
         for image, image_markers in zip(images, markers):
             if len(image_markers) == 0:
                 continue
-            dilated_kernel_size = kernel_size + (self.dilation - 1) * (kernel_size-1)
+
+            kernel_size = np.array(kernel_size)
+            dilation = np.array(self.dilation)
+
+            dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
             dilated_padding = dilated_kernel_size // 2
-            image_pad = np.pad(image, ((dilated_padding, dilated_padding),
-                                    (dilated_padding, dilated_padding), (0, 0)),
+            image_pad = np.pad(image, ((dilated_padding[0], dilated_padding[0]),
+                                    (dilated_padding[1], dilated_padding[1]), (0, 0)),
                             mode='constant', constant_values=0)
 
             patches = view_as_windows(image_pad,
-                                      (dilated_kernel_size, dilated_kernel_size, in_channels),
+                                      (dilated_kernel_size[0], dilated_kernel_size[1], in_channels),
                                       step=1)
-
-            if self.dilation > 1:
-                r = np.arange(0, dilated_kernel_size, self.dilation)
+                                      
+            if self.dilation[0] > 1 or self.dilation[1] > 0:
+                r = np.arange(0, dilated_kernel_size[0], self.dilation[0])
+                s = np.arange(0, dilated_kernel_size[1], self.dilation[1])
                 patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
 
             shape = patches.shape

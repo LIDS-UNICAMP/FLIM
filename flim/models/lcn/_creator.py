@@ -20,6 +20,7 @@ __all__ = ['LCNCreator']
 
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
+    "avg_pool2d": nn.AvgPool2d,
     "conv2d": SpecialConvLayer,
     "relu": nn.ReLU,
     "linear": SpecialLinearLayer,
@@ -333,29 +334,25 @@ class LCNCreator:
                         
                     layer.eval()
                     
-                elif layer_config['operation'] == "max_pool2d":
+                elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d":
                     stride = operation_params['stride']
                     kernel_size = operation_params['kernel_size']
                     
                     if 'padding' in operation_params:
                         padding = operation_params['padding']
+                        if isinstance(padding, int):
+                            padding = [padding, padding]
                     else:
-                        padding = 0
+                        padding = [0, 0]
                     
                     if isinstance(kernel_size, int):
                         kernel_size = [kernel_size, kernel_size]
 
-                    output_shape[0] = math.floor((output_shape[0] + 2*padding - kernel_size[0])/stride + 1)
-                    output_shape[1] = math.floor((output_shape[1] + 2*padding - kernel_size[1])/stride + 1)
+                    output_shape[0] = math.floor((output_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
+                    output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
                     
                     if markers is not None:
                         markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
-                    
-                    layer = operation(**operation_params)
-                    
-                elif layer_config['operation'] == "adap_avg_pool2d":
-                    output_shape[0] = operation_params['output_size'][0]
-                    output_shape[1] = operation_params['output_size'][1]
                     
                     layer = operation(**operation_params)
                     
@@ -697,12 +694,12 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
       
       marker_shape = [*marker.shape]
 
-      marker_shape[0] = math.floor((marker_shape[0] + 2*padding - kernel_size[0])/stride + 1)
-      marker_shape[1] = math.floor((marker_shape[1] + 2*padding - kernel_size[1])/stride + 1)
+      marker_shape[0] = math.floor((marker_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
+      marker_shape[1] = math.floor((marker_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
 
       new_marker = np.zeros(marker_shape, dtype=np.int)
-      x_limit = marker.shape[0] + 2*padding - kernel_size[0]
-      y_limit = marker.shape[1] + 2*padding - kernel_size[1]
+      x_limit = marker.shape[0] + 2*padding[0] - kernel_size[0]
+      y_limit = marker.shape[1] + 2*padding[1] - kernel_size[1]
       for x, y in zip(indices_x, indices_y):
           if x > x_limit or y > y_limit:
             continue

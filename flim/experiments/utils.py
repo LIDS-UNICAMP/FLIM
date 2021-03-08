@@ -38,6 +38,10 @@ from termcolor import colored
 
 import math
 
+from math import floor
+
+from collections import OrderedDict
+
 from skimage.color import lab2rgb
 
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
@@ -886,24 +890,24 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
                 
             _outputs = outputs[layer_name]
                     
-            if format == 'zip':
+            _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
 
-                _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
+            labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
 
-                labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
+            opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
 
-                opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
+            ift.CreateDataSet()
 
-                opf_dataset.SetNClasses = labels.max() + 1
+            opf_dataset.SetNClasses = labels.max() + 1
 
-                ift.SetStatus(opf_dataset, ift.IFT_TRAIN)
-                ift.AddStatus(opf_dataset, ift.IFT_SUPERVISED)
-                
+            ift.SetStatus(opf_dataset, ift.IFT_TRAIN)
+            ift.AddStatus(opf_dataset, ift.IFT_SUPERVISED)
+            
 
-                # opf_dataset.SetLabels(labels + 1)
+            # opf_dataset.SetLabels(labels + 1)
 
-                _output_dir = os.path.join(layer_dir, "dataset.zip")
-                save_opf_dataset(_output_dir, opf_dataset)
+            _output_dir = os.path.join(layer_dir, "dataset.zip")
+            save_opf_dataset(_output_dir, opf_dataset)
 
 def get_arch_in_lids_format(architecture, split):
 
@@ -983,3 +987,72 @@ def get_arch_in_lids_format(architecture, split):
     
     return lids_layer_specs
 
+def create_arch(layers_dir):
+    layers_info_files = [f for f in os.listdir(layers_dir) if f.endswith('.json')]
+    layers_info_files.sort()
+
+    arch = OrderedDict([('features', {'type': 'sequential', 'layers': OrderedDict()})])
+
+    layers = arch['features']['layers']
+
+    for i, layer_info_file in enumerate(layers_info_files, 1):
+        with open(os.path.join(layers_dir, layer_info_file), 'r') as f:
+            layer_info = json.load(f)
+
+        # print(layer_info)
+
+        conv_spec = {
+            'operation': 'conv2d',
+            'params': {
+                'kernel_size': layer_info['kernelsize'][:-1],
+                'number_of_kernels_per_marker': layer_info['nkernelspermarker'],
+                'dilation': layer_info['dilationrate'][:-1],
+                'out_channels': layer_info['finalnkernels'],
+                'padding': [floor(layer_info['kernelsize'][0]/2), floor(layer_info['kernelsize'][1]/2)],
+                'stride': 1
+            }
+        }
+
+        if layer_info['relu'] == 1:
+            relu_spec = {
+                'operation': 'relu',
+                'params': {
+                    'inplace': True
+                }
+            }
+        else:
+            relu_spec = None
+
+        if layer_info['pooling']['pooltype'] != 0:
+            pool_spec = {
+                'params': {
+                    'kernel_size': [layer_info['pooling']['poolxsize'], layer_info['pooling']['poolysize']],
+                    'stride': layer_info['pooling']['poolstride'],
+                    'padding': [floor(layer_info['pooling']['poolxsize']/2), floor(layer_info['pooling']['poolysize']/2)]
+                }
+            }
+
+            if layer_info['pooling']['pooltype'] == 1:
+                pool_spec['operation'] = 'max_pool2d'
+
+            elif layer_info['pooling']['pooltype'] == 2:
+                pool_spec['operation'] = 'avg_pool2d'
+
+        layers[f'conv{i}'] = conv_spec
+
+        if relu_spec is not None:
+            layers[f'relu{i}'] = relu_spec
+
+        if pool_spec is not None:
+            layers[f'pool{i}'] = pool_spec
+
+    
+    return arch
+
+def save_arch(arch, output_path):
+
+    if not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
+
+    with open(output_path, 'w') as f:
+        json.dump(arch, f, indent=4)
