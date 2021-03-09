@@ -128,7 +128,7 @@ def _handle_train(args):
 
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
-    utils.save_lids_model(model, args.outputs_dir, args.model_filename)
+    utils.save_lids_model(model, architecture, args.train_split, args.outputs_dir, args.model_filename)
 
     if args.intermediate:
         utils.save_intermediate_outputs(model,

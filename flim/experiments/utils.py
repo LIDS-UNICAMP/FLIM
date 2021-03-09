@@ -1,3 +1,4 @@
+from ast import Str
 import json
 from logging import root
 
@@ -46,6 +47,8 @@ from skimage.color import lab2rgb
 
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
+
+import re
 
 ift = None
 
@@ -449,6 +452,17 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
         
     if not os.path.exists(os.path.join(outputs_dir, model_name)):
         os.makedirs(os.path.join(outputs_dir, model_name))
+
+    if isinstance(split, str):
+        split_basename = os.path.basename(split)
+
+        split = re.findall(r'\d+', split_basename)
+
+        if len(split) == 0:
+            split = 1
+        else:
+            split = int(split[0])
+
 
     layer_specs = get_arch_in_lids_format(architecture, split)
     conv_count = 1
