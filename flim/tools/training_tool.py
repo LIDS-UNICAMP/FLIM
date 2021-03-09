@@ -105,7 +105,7 @@ def _handle_train(args):
     if args.load_lids_model:
         model = utils.load_lids_model(model,
                                       args.lids_model_dir,
-                                      architecture)
+                                      args.train_split)
         
     if args.backpropagation:
         utils.train_model(model,

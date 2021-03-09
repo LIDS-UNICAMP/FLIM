@@ -384,15 +384,26 @@ def load_torchvision_model_weights(model, weigths_path):
     return model
     
 
-def load_lids_model(model, lids_model_dir, architecture):
+def load_lids_model(model, lids_model_dir, split):
     print("Loading LIDS model...")
+
+    if isinstance(split, str):
+        split_basename = os.path.basename(split)
+
+        split = re.findall(r'\d+', split_basename)
+
+        if len(split) == 0:
+            split = 1
+        else:
+            split = int(split[0])
+
     for name, layer in model.feature_extractor.named_children():
         print(name)
         if isinstance(layer, SpecialConvLayer):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
                                             f"{name}-kernels.npy"))
-                
+
                 in_channels = layer.in_channels
                 out_channels = layer.out_channels
                 kernel_size = layer.kernel_size
@@ -408,20 +419,19 @@ def load_lids_model(model, lids_model_dir, architecture):
                     std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
                 
                 weights = weights.transpose()
-                weights = weights.reshape(out_channels, in_channels, kernel_size, kernel_size)
+                weights = weights.reshape(out_channels, in_channels, kernel_size[0], kernel_size[1])
                 
                 layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
                 layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
                 
                 layer.conv.weight = nn.Parameter(torch.from_numpy(weights).float())
     
-    classifier_arch = architecture['classifier']['layers']
     for name, layer in model.classifier.named_children():
         print(name)
         if isinstance(layer, SpecialLinearLayer):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
-                                            f"{name}-weights.npy"))
+                                            f"split{split}-{name}-weights.npy"))
                 weights = weights.transpose()
                 
                 with open(os.path.join(lids_model_dir,
@@ -481,9 +491,9 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
             mean = mean.reshape(1, -1)
             std = std.reshape(1, -1)
 
-            np.save(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}.npy"), weights.float())
-            np.savetxt(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}-mean.txt"), mean.float())
-            np.savetxt(os.path.join(outputs_dir, model_name, f"split{split}-conv{conv_count}-std.txt"), std.float())
+            np.save(os.path.join(outputs_dir, model_name, f"conv{conv_count}-kernels.npy"), weights.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"conv{conv_count}-mean.txt"), mean.float())
+            np.savetxt(os.path.join(outputs_dir, model_name, f"conv{conv_count}-stdev.txt"), std.float())
 
             conv_count += 1
 
@@ -909,8 +919,6 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
             labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
 
             opf_dataset = ift.CreateDataSetFromNumPy(_outputs, labels + 1)
-
-            ift.CreateDataSet()
 
             opf_dataset.SetNClasses = labels.max() + 1
 

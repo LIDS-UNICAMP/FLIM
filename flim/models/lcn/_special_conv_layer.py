@@ -188,8 +188,8 @@ class SpecialConvLayer(nn.Module):
         else:
             kernels_weights = torch.rand(kernels_number,
                                          self.in_channels,
-                                         self.kernel_size,
-                                         self.kernel_size).numpy()
+                                         self.kernel_size[0],
+                                         self.kernel_size[1]).numpy()
 
         self.out_channels = kernels_weights.shape[0]
         
@@ -210,7 +210,7 @@ class SpecialConvLayer(nn.Module):
         
         if images is None or markers is None:
             print("Initialing with xavier")
-            n = self.kernel_size * self.kernel_size * self.out_channels
+            n = self.kernel_size[0] * self.kernel_size[1] * self.out_channels
             _conv.weight.data.normal_(0, math.sqrt(2. / n))
             
             if _conv.bias is not None:
