@@ -982,9 +982,9 @@ def get_arch_in_lids_format(architecture, split):
 
             if j < len(layer_names) and 'pool' in operations[j]:
                 if operations[j] == 'max_pool2d':
-                    pool_spec['pool_type'] = 1
-                elif operations[j] == 'avg_pool2d':
                     pool_spec['pool_type'] = 2
+                elif operations[j] == 'avg_pool2d':
+                    pool_spec['pool_type'] = 1
 
                 pool_params = layers[layer_names[j]]['params']
 
@@ -1054,10 +1054,10 @@ def create_arch(layers_dir):
                 }
             }
 
-            if layer_info['pooling']['pooltype'] == 1:
+            if layer_info['pooling']['pooltype'] == 2:
                 pool_spec['operation'] = 'max_pool2d'
 
-            elif layer_info['pooling']['pooltype'] == 2:
+            elif layer_info['pooling']['pooltype'] == 1:
                 pool_spec['operation'] = 'avg_pool2d'
 
         layers[f'conv{i}'] = conv_spec
