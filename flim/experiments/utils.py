@@ -603,7 +603,7 @@ def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model.feature_extractor(inputs).detach()
+        outputs = model.extract_features(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
@@ -643,7 +643,7 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         if hasattr(model, "features"):
             outputs = model.features(inputs).detach()
         else:
-            outputs = model.feature_extractor(inputs).detach()
+            outputs = model.extract_features(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 
@@ -831,7 +831,7 @@ def load_mimage(path):
 def save_mimgage(path, image):
     assert ift is not None, "PyIFT is not available"
     
-    mimage = ift.CreateMImageFromNumPy(image)
+    mimage = ift.CreateMImageFromNumPy(np.ascontiguousarray(image))
     ift.WriteMImage(mimage, path)
 
 def save_opf_dataset(path, opf_dataset):
@@ -846,7 +846,7 @@ def load_opf_dataset(path):
 
     return opf_dataset
         
-def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers=None, only_features=True, format="mimg", device='cpu'):
+def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers=None, only_features=True, format="mimg", remove_border=0, device='cpu'):
     
     if only_features:
         if hasattr(model, "features"):
@@ -856,12 +856,14 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
     else:
         _model = model
 
-
+    last_layer = None
     for layer_name in layers:
         layer_dir = os.path.join(outputs_dir, 'intermediate-outputs', layer_name)
 
         if not os.path.exists(layer_dir):
             os.makedirs(layer_dir)
+        
+        last_layer = layer_name
     
     _model.eval()
     _model.to(device)
@@ -880,6 +882,11 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
         
         for layer_name, layer in _model.named_children():
             _outputs = layer(inputs)
+
+            if layer_name == last_layer and remove_border > 0:
+                b = remove_border
+
+                _outputs = _outputs[:,:, b:-b, b:-b]
             inputs = _outputs
 
             if layer_name not in outputs_count:
@@ -1030,7 +1037,8 @@ def create_arch(layers_dir):
                 'number_of_kernels_per_marker': layer_info['nkernelspermarker'],
                 'dilation': layer_info['dilationrate'][:-1],
                 'out_channels': layer_info['finalnkernels'],
-                'padding': [floor(layer_info['kernelsize'][0]/2), floor(layer_info['kernelsize'][1]/2)],
+                'padding': [floor((layer_info['kernelsize'][0] + (layer_info['kernelsize'][0] - 1) * (layer_info['dilationrate'][0] -1))/2),
+                            floor((layer_info['kernelsize'][1] + (layer_info['kernelsize'][1] - 1) * (layer_info['dilationrate'][1] -1))/2)],
                 'stride': 1
             }
         }
@@ -1072,8 +1080,9 @@ def create_arch(layers_dir):
     return arch
 
 def save_arch(arch, output_path):
+    dirname = os.path.dirname(output_path)
 
-    if not os.path.exists(os.path.dirname(output_path)):
+    if not os.path.exists(dirname) and dirname != '':
         os.makedirs(os.path.dirname(output_path))
 
     with open(output_path, 'w') as f:

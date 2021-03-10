@@ -119,6 +119,8 @@ class LCNCreator:
         self.last_conv_layer_out_channels = 0
 
         self.device = device
+
+        self._remove_border = remove_border
         
         self.LCN = LIDSConvNet(remove_boder=remove_border)
         
@@ -278,7 +280,7 @@ class LCNCreator:
                     activation_config = None
                     pool_config = None
 
-                    if 'activation' in layer_config:
+                    '''if 'activation' in layer_config:
                         activation_config = layer_config['activation']
                     if 'pool' in layer_config:
                         pool_config = layer_config['pool']
@@ -294,7 +296,7 @@ class LCNCreator:
                         output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size[1]-1)/2))//stride
                         
                         if markers is not None:
-                            markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
+                            markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)'''
                     operation_params['in_channels'] = last_conv_layer_out_channels
                     
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
@@ -351,9 +353,31 @@ class LCNCreator:
                     output_shape[0] = math.floor((output_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
                     output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
                     
-                    if markers is not None:
-                        markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
+                    operation_params['stride'] = 1
+                    _layer = operation(**operation_params)
+
+                    if images is not None and markers is not None:    
+                        torch_images = torch.Tensor(images)
+
+                        torch_images = torch_images.permute(0, 3, 1, 2)
+                        
+                        input_size = torch_images.size(0)
+                        
+                        outputs = torch.Tensor([])
+                        layer = layer.to(self.device)
+                        
+                        for i in range(0, input_size, batch_size):
+                            batch = torch_images[i: i+batch_size]
+                            output = _layer.forward(batch.to(device))
+                            output = output.detach().cpu()
+                            outputs = torch.cat((outputs, output))
+                            
+                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
                     
+                    #if markers is not None:
+                    #    markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
+
+                    operation_params['stride'] = stride
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "adap_avg_pool2d":
@@ -393,7 +417,7 @@ class LCNCreator:
                     
                     input_size = torch_images.size(0)
                     
-                    if layer_config['operation'] != "unfold":
+                    if layer_config['operation'] != "unfold" and not ('pool' in layer_config['operation']):
                         outputs = torch.Tensor([])
                         layer = layer.to(self.device)
                         
@@ -409,8 +433,13 @@ class LCNCreator:
                 module.add_module(key, layer)
 
         output_shape[2] = last_conv_layer_out_channels
+
+        if self._remove_border > 0:
+            output_shape[0] -= 2*self._remove_border
+            output_shape[1] -= 2*self._remove_border
+
         self._output_shape = output_shape
-       
+        
         return module, last_conv_layer_out_channels
     
     def build_classifier(self, train_set=None, state_dict=None):

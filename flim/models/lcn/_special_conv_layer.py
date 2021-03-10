@@ -73,6 +73,7 @@ class SpecialConvLayer(nn.Module):
                  use_pca=False,
                  activation_config=None,
                  pool_config=None,
+                 zero_border=True,
                  device='cpu'):
         """Initialize the class.
 
@@ -137,6 +138,8 @@ class SpecialConvLayer(nn.Module):
         self._use_random_kernels = use_random_kernels
         self._use_pca = use_pca
 
+        self._zero_border = zero_border
+
         #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
         #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
         
@@ -180,7 +183,7 @@ class SpecialConvLayer(nn.Module):
             kernels_weights = self._calculate_weights(images, markers)
             kernels_weights = np.rollaxis(kernels_weights, 3, 1)
 
-            if self._use_pca and self.out_channels is not None and self.out_channels < kernels_weights.shape[0]:
+            if  self.out_channels is not None and self.out_channels < kernels_weights.shape[0] and np.prod(kernels_weights.shape[1:]) > self.out_channels:
                 kernels_weights = _select_kernels_with_pca(kernels_weights, self.out_channels)
             elif self.out_channels is not None and self.out_channels < kernels_weights.shape[0]:
                 kernels_weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), self.out_channels)
@@ -473,6 +476,10 @@ class SpecialConvLayer(nn.Module):
             
         y = x
 
+        if self._zero_border:
+            y[:, :, 0:self.padding[0], 0:self.padding[0]] = 0
+            y[:, :, -self.padding[1]:, -self.padding[1]:] = 0
+
         return y
         
     def _calculate_weights(self, images, markers):
@@ -645,8 +652,9 @@ def _kmeans_roots(patches,
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
         if patches_of_label.shape[0] > min_number_of_pacthes_per_label:
+            # TODO remove fix random_state
             kmeans = MiniBatchKMeans(
-                n_clusters=n_clusters_per_label, max_iter=100, random_state=42)
+                n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             
             roots_of_label = kmeans.cluster_centers_

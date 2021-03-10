@@ -152,11 +152,11 @@ The available tools are `train` and` validate`. For a description of the paramet
 Following, there are usage examples for each tool:
 
 ```
-train train -d lids-dataset -ts train_split.txt -a arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
+train train -d lids-dataset -ts train_split.txt -ad arch.json -md markers-dir -od outputs-dir -mn trained-model.pt -g 0 -e 120 -bs 64 -lr 0.001 -wd 0.001
 ```
 
 ```
-validate -d lids-dataset -vs val_split.txt -a arch.json -mp outputs-dir/trained-model.pt -g 0
+validate -d lids-dataset -vs val_split.txt -ad arch.json -mp outputs-dir/trained-model.pt -g 0
 ```
 
 To save the output of intermediate layers, run:

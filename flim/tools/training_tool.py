@@ -86,7 +86,8 @@ def _handle_train(args):
                                 input_shape=input_shape,
                                 train_set=dataset,
                                 remove_border=args.remove_border,
-                                relabel_markers=False,
+                                relabel_markers=True,
+                                batch_size=args.batch_size,
                                 device=device)
     elif architecture is not None:
         model = utils.build_model(architecture,
@@ -95,6 +96,7 @@ def _handle_train(args):
                                 input_shape=input_shape,
                                 remove_border=args.remove_border,
                                 relabel_markers=False,
+                                batch_size=args.batch_size,
                                 device=device)
         
     else:
@@ -137,6 +139,7 @@ def _handle_train(args):
                                         batch_size=args.batch_size,
                                         format=args.format,
                                         layers=args.layers,
+                                        remove_border=args.remove_border,
                                         device=device)
 
 def _handle_select(args):
