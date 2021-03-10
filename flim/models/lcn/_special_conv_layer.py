@@ -9,7 +9,7 @@ import numpy as np
 
 from skimage.util import view_as_windows, pad
 
-from sklearn.cluster import MiniBatchKMeans
+from sklearn.cluster import MiniBatchKMeans, KMeans
 from sklearn.decomposition import PCA
 
 from scipy.spatial import distance
@@ -653,8 +653,10 @@ def _kmeans_roots(patches,
         # TODO get a value as arg.
         if patches_of_label.shape[0] > min_number_of_pacthes_per_label:
             # TODO remove fix random_state
-            kmeans = MiniBatchKMeans(
-                n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
+            #kmeans = MiniBatchKMeans(
+            #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
+
+            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=1000)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             
             roots_of_label = kmeans.cluster_centers_

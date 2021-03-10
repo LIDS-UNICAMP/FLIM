@@ -830,7 +830,7 @@ def load_mimage(path):
 
 def save_mimgage(path, image):
     assert ift is not None, "PyIFT is not available"
-    
+
     mimage = ift.CreateMImageFromNumPy(np.ascontiguousarray(image))
     ift.WriteMImage(mimage, path)
 
@@ -921,7 +921,7 @@ def save_intermediate_outputs(model, dataset, outputs_dir, batch_size=16, layers
                 
             _outputs = outputs[layer_name]
                     
-            _outputs = _outputs.numpy().reshape(_outputs.shape[0], -1)
+            _outputs = _outputs.permute(0, 2, 3, 1).numpy().reshape(_outputs.shape[0], -1)
 
             labels = np.array([int(image_name[0:image_name.index("_")]) - 1 for image_name in outputs_names]).astype(np.int32)
 
