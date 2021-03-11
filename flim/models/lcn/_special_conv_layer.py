@@ -73,7 +73,7 @@ class SpecialConvLayer(nn.Module):
                  use_pca=False,
                  activation_config=None,
                  pool_config=None,
-                 zero_border=True,
+                 zero_border=False,
                  device='cpu'):
         """Initialize the class.
 
@@ -576,20 +576,21 @@ class SpecialConvLayer(nn.Module):
             kernel_size = np.array(kernel_size)
             dilation = np.array(self.dilation)
 
-            dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
-            dilated_padding = dilated_kernel_size // 2
-            image_pad = np.pad(image, ((dilated_padding[0], dilated_padding[0]),
-                                    (dilated_padding[1], dilated_padding[1]), (0, 0)),
+            #dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
+
+            padding = kernel_size // 2
+            image_pad = np.pad(image, ((padding[0], padding[0]),
+                                    (padding[1], padding[1]), (0, 0)),
                             mode='constant', constant_values=0)
 
             patches = view_as_windows(image_pad,
-                                      (dilated_kernel_size[0], dilated_kernel_size[1], in_channels),
+                                      (kernel_size[0], kernel_size[1], in_channels),
                                       step=1)
                                       
-            if self.dilation[0] > 1 or self.dilation[1] > 0:
-                r = np.arange(0, dilated_kernel_size[0], self.dilation[0])
-                s = np.arange(0, dilated_kernel_size[1], self.dilation[1])
-                patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
+            #if self.dilation[0] > 1 or self.dilation[1] > 0:
+            #    r = np.arange(0, dilated_kernel_size[0], self.dilation[0])
+            #    s = np.arange(0, dilated_kernel_size[1], self.dilation[1])
+            #    patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
 
             shape = patches.shape
             image_shape = image.shape
