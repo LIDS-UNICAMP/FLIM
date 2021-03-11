@@ -576,21 +576,20 @@ class SpecialConvLayer(nn.Module):
             kernel_size = np.array(kernel_size)
             dilation = np.array(self.dilation)
 
-            #dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
-
-            padding = kernel_size // 2
-            image_pad = np.pad(image, ((padding[0], padding[0]),
-                                    (padding[1], padding[1]), (0, 0)),
+            dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
+            dilated_padding = dilated_kernel_size // 2
+            image_pad = np.pad(image, ((dilated_padding[0], dilated_padding[0]),
+                                    (dilated_padding[1], dilated_padding[1]), (0, 0)),
                             mode='constant', constant_values=0)
 
             patches = view_as_windows(image_pad,
-                                      (kernel_size[0], kernel_size[1], in_channels),
+                                      (dilated_kernel_size[0], dilated_kernel_size[1], in_channels),
                                       step=1)
                                       
-            #if self.dilation[0] > 1 or self.dilation[1] > 0:
-            #    r = np.arange(0, dilated_kernel_size[0], self.dilation[0])
-            #    s = np.arange(0, dilated_kernel_size[1], self.dilation[1])
-            #    patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
+            if self.dilation[0] > 1 or self.dilation[1] > 0:
+                r = np.arange(0, dilated_kernel_size[0], self.dilation[0])
+                s = np.arange(0, dilated_kernel_size[1], self.dilation[1])
+                patches = patches[:, :, :, r, : , :][:, :, :, :, r , :]
 
             shape = patches.shape
             image_shape = image.shape
@@ -657,7 +656,7 @@ def _kmeans_roots(patches,
             #kmeans = MiniBatchKMeans(
             #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
 
-            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=1000)
+            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             
             roots_of_label = kmeans.cluster_centers_

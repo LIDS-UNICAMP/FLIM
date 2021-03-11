@@ -7,8 +7,6 @@ from typing import cast
 from warnings import catch_warnings
 import warnings
 
-from numpy.lib.function_base import average
-
 from skimage import io
 from skimage.color import rgb2lab
 
@@ -591,9 +589,9 @@ def validate_model(model,
     print("Calculating metrics...")
     _calulate_metrics(true_labels, pred_labels)
 
-def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu'):
+def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu', C=100, degree=3):
     print("Preparing to train SVM")
-    clf = svm.LinearSVC(max_iter=max_iter)
+    clf = svm.SVC(max_iter=max_iter, C=C, degree=degree, gamma='auto', coef0=0, decision_function_shape='ovo', kernel='linear')
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=False, drop_last=False)
 
     model.eval()
