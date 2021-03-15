@@ -46,6 +46,8 @@ from skimage.color import lab2rgb
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
 
+from PIL import Image
+
 import re
 
 ift = None
@@ -56,7 +58,7 @@ except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
-def load_image(image_dir):
+'''def load_image(image_dir):
     image = io.imread(image_dir)
 
     if image.ndim == 3 and image.shape[-1] == 4:
@@ -66,12 +68,49 @@ def load_image(image_dir):
 
     image = rgb2lab(image)
     
-    image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
-    return image
+    image = (image + (np.array([[0], [86.182236], [107.867744]])).reshape(1, 1, 3) )/(np.array([[99.998337], [86.182236 + 98.258614], [107.867744 + 94.481682]])).reshape(1, 1, 3)
+    return image'''
+
+def labf(x):
+    if x >= 8.85645167903563082e-3:
+        return x**(0.33333333333)
+    else:
+        return (841.0/108.0)*(x) + (4.0/29.0)
+
+def load_image(path):
+    labf_v = np.vectorize(labf)
+    image = np.asarray(Image.open(path))
+
+    image = image/image.max()
+
+    new_image = np.zeros_like(image)
+
+    R, G, B = image[:, :, 0], image[:, :, 1], image[:, :, 2]
+
+    X = (0.4123955889674142161*R + 0.3575834307637148171*G + 0.1804926473817015735*B)
+    Y = (0.2125862307855955516*R + 0.7151703037034108499*G + 0.07220049864333622685*B)
+    Z = (0.01929721549174694484*R + 0.1191838645808485318*G + 0.9504971251315797660*B)
+
+    X = labf_v(X/0.950456)
+    Y = labf_v(Y/1.0)
+    Z = labf_v(Z/1.088754)
+
+    new_image[:, :, 0] = 116*Y -16
+    new_image[:, :, 1] = 500 * (X - Y)
+    new_image[:, :, 2] = 200 * (Y - Z)
+
+    #new_image = rgb2lab(image)
+
+    new_image[:, :, 0] = new_image[:, :, 0]/99.998337
+    new_image[:, :, 1] = (new_image[:, :, 1] + 86.182236)/(86.182236 + 98.258614)
+    new_image[:, :, 2] = (new_image[:, :, 2] + 107.867744)/(107.867744 + 94.481682)
+
+    return new_image
 
 
 def image_to_rgb(image):
-    image = image*(np.array([[116], [500], [200]])).reshape(1, 1, 3)
+    image = image*(np.array([[99.998337], [86.182236 + 98.258614], [107.867744 + 94.481682]])).reshape(1, 1, 3)
+    image = image - np.array([[0], [86.182236], [107.867744]]).reshape(1, 1, 3)
     image = lab2rgb(image)
     return image
 
@@ -139,9 +178,12 @@ def build_model(architecture,
                 train_set=None,
                 remove_border=0,
                 relabel_markers=True,
+                default_std=1e-6,
                 device='cpu'):
+
     torch.manual_seed(42)
     np.random.seed(42)
+
     if device != 'cpu':
         torch.backends.cudnn.deterministic = True
         
@@ -152,6 +194,7 @@ def build_model(architecture,
                          batch_size=batch_size,
                          relabel_markers=relabel_markers,
                          remove_border=remove_border,
+                         default_std=default_std,
                          device=device)
 
     print("Building feature extractor...")
@@ -361,12 +404,13 @@ def save_model(model, outputs_dir, model_filename):
     print("Saving model...")
     torch.save(model.state_dict(), dir_to_save)
 
-def load_model(model_path, architecture, input_shape, remove_border=0):
+def load_model(model_path, architecture, input_shape, remove_border=0, default_std=1e-6):
     state_dict = torch.load(model_path, map_location=torch.device('cpu'))
 
     creator = LCNCreator(architecture,
                          input_shape=input_shape,
                          remove_border=remove_border,
+                         default_std=default_std,
                          relabel_markers=False)
     print("Loading model...")
     creator.load_model(state_dict)
@@ -417,7 +461,8 @@ def load_lids_model(model, lids_model_dir, split):
                     std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
                 
                 weights = weights.transpose()
-                weights = weights.reshape(out_channels, in_channels, kernel_size[0], kernel_size[1])
+                weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], in_channels)
+                weights = weights.transpose(0, 3, 1, 2)
                 
                 layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
                 layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())

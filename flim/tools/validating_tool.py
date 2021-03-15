@@ -35,6 +35,11 @@ def get_arguments():
                         nargs='*',
                         type=int)
 
+    parser.add_argument('-dstd', "--default-std",
+                        help="Default std",
+                        default=1e-6,
+                        type=float)
+
     parser.add_argument('-s', '--svm',
                         help='Use SVM as classifier',
                         action="store_true")
@@ -92,7 +97,7 @@ def main():
     
     if args.torchvision_model is None:
         architecture = utils.load_architecture(args.architecture_dir)
-        model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border)
+        model = utils.load_model(args.model_path, architecture, input_shape, remove_border=args.remove_border, default_std=args.default_std)
     else:
         model = utils.get_torchvision_model(args.torchvision_model,
                                             args.number_classes,

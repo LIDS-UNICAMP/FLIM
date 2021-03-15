@@ -88,6 +88,7 @@ def _handle_train(args):
                                 remove_border=args.remove_border,
                                 relabel_markers=True,
                                 batch_size=args.batch_size,
+                                default_std=args.default_std,
                                 device=device)
     elif architecture is not None:
         model = utils.build_model(architecture,
@@ -97,6 +98,7 @@ def _handle_train(args):
                                 remove_border=args.remove_border,
                                 relabel_markers=False,
                                 batch_size=args.batch_size,
+                                default_std=args.default_std,
                                 device=device)
         
     else:
@@ -273,13 +275,19 @@ def get_arguments():
 
     parser_train.add_argument('-wd', '--weight-decay',
                         help="Weight decay",
-                        default=10e-3,
+                        default=1e-3,
                         type=float)
     
     parser_train.add_argument('-g', '--gpus',
                         help='gpus to use',
                         nargs='*',
                         type=int)
+
+
+    parser_train.add_argument('-dstd', "--default-std",
+                              help="Default std",
+                              default=1e-6,
+                              type=float)
 
     parser_train.add_argument('-s', '--svm',
                         help='Use SVM as classifier',

@@ -62,7 +62,8 @@ class LCNCreator:
                  relabel_markers=False,
                  device='cpu',
                  superpixels_markers=None,
-                 remove_border=0):
+                 remove_border=0,
+                 default_std=1e-6):
         """Initialize the class.
 
         Parameters
@@ -121,6 +122,8 @@ class LCNCreator:
         self.device = device
 
         self._remove_border = remove_border
+
+        self._default_std = default_std
         
         self.LCN = LIDSConvNet(remove_boder=remove_border)
         
@@ -303,6 +306,7 @@ class LCNCreator:
                         operation_params["number_of_kernels_per_marker"] = operation_params["out_channels"]//np.array(markers).max()
                         
                     layer = operation(**operation_params,
+                                      default_std=self._default_std,
                                       activation_config=activation_config,
                                       pool_config=pool_config)
                     if (images is None or markers is None) and state_dict is not None:

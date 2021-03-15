@@ -74,6 +74,7 @@ class SpecialConvLayer(nn.Module):
                  activation_config=None,
                  pool_config=None,
                  zero_border=False,
+                 default_std=1e-6,
                  device='cpu'):
         """Initialize the class.
 
@@ -150,6 +151,8 @@ class SpecialConvLayer(nn.Module):
         self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, self.in_channels, 1, 1)))
         
         self.device = device
+
+        self._default_std = default_std
         
         self._logger = logging.getLogger()
         
@@ -469,7 +472,7 @@ class SpecialConvLayer(nn.Module):
         """
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
-        x = (x - self.mean_by_channel)/(self.std_by_channel + 1e-6)
+        x = (x - self.mean_by_channel)/(self.std_by_channel + self._default_std)
         
         for _, layer in self.named_children():
             x = layer.forward(x)
