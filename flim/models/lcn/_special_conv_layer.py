@@ -74,6 +74,7 @@ class SpecialConvLayer(nn.Module):
                  activation_config=None,
                  pool_config=None,
                  zero_border=False,
+                 normalize_before=True,
                  default_std=1e-6,
                  device='cpu'):
         """Initialize the class.
@@ -140,6 +141,8 @@ class SpecialConvLayer(nn.Module):
         self._use_pca = use_pca
 
         self._zero_border = zero_border
+
+        self._normalize_before = normalize_before
 
         #self.register_buffer('mean_by_channel', torch.zeros(1, 1, 1, self.in_channels))
         #self.register_buffer('std_by_channel', torch.ones(1, 1, 1, self.in_channels))
@@ -223,6 +226,9 @@ class SpecialConvLayer(nn.Module):
                 _conv.bias.data.zero_()
                 
         self.add_module("conv", _conv)
+
+        if not self._normalize_before:
+            self._compute_mean_and_std_after_conv(images, markers)
         
         if self._activation_config is not None:
             _activation = __operations__[
@@ -280,7 +286,7 @@ class SpecialConvLayer(nn.Module):
         all_labels = np.concatenate((old_markers_labels, labels))
 
         mean_by_channel = all_patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True) + 1e-6
+        std_by_channel = all_patches.std(axis=(0, 1, 2), keepdims=True)
         
         self.mean_by_channel = \
             torch.from_numpy(mean_by_channel).float().to(self.device)
@@ -472,12 +478,17 @@ class SpecialConvLayer(nn.Module):
         """
         self._logger.debug(
             "forwarding in special conv layer. Input shape %i", x.size())
-        x = (x - self.mean_by_channel)/(self.std_by_channel + self._default_std)
+
+        if self._normalize_before:
+            x = (x - self.mean_by_channel)/(self.std_by_channel + self._default_std)
         
         for _, layer in self.named_children():
             x = layer.forward(x)
             
         y = x
+
+        if not self._normalize_before:
+            y = (y - self.mean_by_channel)/(self.std_by_channel + self._default_std)
 
         if self._zero_border:
             y[:, :, 0:self.padding[0], 0:self.padding[0]] = 0
@@ -513,15 +524,16 @@ class SpecialConvLayer(nn.Module):
                                                  self.kernel_size,
                                                  self.in_channels)
 
-        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True) + 1e-6
-        
-        self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
-        self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
-                
-        # print(self.std_by_channel)
-        
-        patches = (patches - mean_by_channel)/std_by_channel
+        if self._normalize_before:
+            mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
+            std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+            
+            self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
+            self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
+                    
+            # print(self.std_by_channel)
+            
+            patches = (patches - mean_by_channel)/std_by_channel
 
         kernel_weights = _kmeans_roots(patches,
                                        labels,
@@ -621,6 +633,29 @@ class SpecialConvLayer(nn.Module):
         
         return all_patches, all_labels
 
+    def _compute_mean_and_std_after_conv(self, images, markers):
+        device = self.device
+
+        if images is None or markers is None:
+            return
+
+        torch_images = torch.from_numpy(images).float().permute(0, 3, 1, 2).to(device)
+
+        conv_out = self.conv(torch_images).detach().cpu().permute(0, 2, 3, 1).numpy()
+
+        patches, _ = self._generate_patches(conv_out,
+                                        markers,
+                                        self.padding,
+                                        self.kernel_size,
+                                        conv_out.shape[-1])
+
+        
+        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+        
+        self.mean_by_channel.data = torch.from_numpy(mean_by_channel).view(1, -1, 1, 1).float()
+        self.std_by_channel.data = torch.from_numpy(std_by_channel).view(1, -1, 1, 1).float()
+
 
 def _kmeans_roots(patches,
                   labels,
@@ -678,7 +713,6 @@ def _kmeans_roots(patches,
     
     roots = roots.reshape(-1, *patches.shape[1:])
     return roots
-
 
 def _compute_similarity_matrix(filters):
     """Compute similarity matrix.
