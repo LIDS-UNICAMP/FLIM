@@ -150,8 +150,10 @@ class SpecialConvLayer(nn.Module):
         #self.mean_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
         #self.std_by_channel = nn.Parameter(torch.zeros(1, 1, 1, self.in_channels))
         
-        self.register_parameter('mean_by_channel', nn.Parameter(torch.zeros(1, self.in_channels, 1, 1)))
-        self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, self.in_channels, 1, 1)))
+        num_channels = in_channels if normalize_before else out_channels
+
+        self.register_parameter('mean_by_channel', nn.Parameter(torch.zeros(1, num_channels, 1, 1)))
+        self.register_parameter('std_by_channel', nn.Parameter(torch.ones(1, num_channels, 1, 1)))
         
         self.device = device
 
