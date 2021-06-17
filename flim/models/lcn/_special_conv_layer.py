@@ -193,6 +193,7 @@ class SpecialConvLayer(nn.Module):
 
             if  self.out_channels is not None and self.out_channels < kernels_weights.shape[0] and np.prod(kernels_weights.shape[1:]) > self.out_channels:
                 kernels_weights = _select_kernels_with_pca(kernels_weights, self.out_channels)
+        
             elif self.out_channels is not None and self.out_channels < kernels_weights.shape[0]:
                 kernels_weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), self.out_channels)
 
@@ -227,7 +228,7 @@ class SpecialConvLayer(nn.Module):
             if _conv.bias is not None:
                 _conv.bias.data.zero_()
                 
-        self.add_module("conv", _conv)
+        self.add_module("__conv__", _conv)
 
         if not self._normalize_before:
             self._compute_mean_and_std_after_conv(images, markers)

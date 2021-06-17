@@ -126,6 +126,10 @@ class LCNCreator:
         self._default_std = default_std
         
         self.LCN = LIDSConvNet(remove_boder=remove_border)
+
+        self._outputs = dict()
+        self._to_save_outputs = dict()
+        self._skips = dict()
         
     def build_feature_extractor(self,
                                 remove_similar_filters=False,
@@ -151,6 +155,12 @@ class LCNCreator:
             architecture = self._architecture['features']
             images = self._images
             markers = self._markers
+
+            self._skips = _find_skip_connections(self._architecture)
+            self._to_save_outputs = _find_outputs_to_save(self._skips)
+
+            if "input" in self._to_save_outputs:
+                self._outputs['input'] = images
             
             if self._relabel_markers:
                 start_label = 2 if self._has_superpixel_markers else 1
@@ -159,7 +169,8 @@ class LCNCreator:
             if self._has_superpixel_markers:
                 markers += self._superpixel_markers
 
-            module, out_channels = self._build_module(architecture,
+            module, out_channels = self._build_module(None,
+                                        architecture,
                                         images,
                                         markers,
                                         remove_similar_filters=remove_similar_filters,
@@ -187,6 +198,7 @@ class LCNCreator:
         self.LCN.load_state_dict(state_dict)
 
     def _build_module(self,
+                      module_name,
                       module_arch,
                       images=None,
                       markers=None,
@@ -235,14 +247,24 @@ class LCNCreator:
         
         layers_arch = module_arch['layers']
 
-        last_conv_layer_out_channels = self._input_shape[-1]
-        output_shape = self._input_shape
+        output_shape = self._input_shape if images is None else np.array(images[0].shape)
+        last_conv_layer_out_channels = output_shape[-1] 
 
         for key in layers_arch:
+            new_module_name = key if module_name is None else f"{module_name}.{key}"
+
+            if new_module_name in self._skips:
+                inputs_names = self._skips[new_module_name]
+                images = np.concatenate([images, *[self._outputs[name] for name in inputs_names]], axis=-1)
+                output_shape = np.array(images[0].shape)
+                last_conv_layer_out_channels = output_shape[-1]
+
             layer_config = layers_arch[key]
             print(f"Building {key}")
+        
             if "type" in layer_config:
-                _module, last_conv_layer_out_channels = self._build_module(layer_config,
+                _module, last_conv_layer_out_channels = self._build_module(new_module_name,
+                                                                           layer_config,
                                                                            images,
                                                                            markers,
                                                                            state_dict,
@@ -253,7 +275,7 @@ class LCNCreator:
                 else:
                     module.add_module(key, _module)
                     if images is not None and markers is not None:
-                        torch_images = torch.Tensor(images)
+                        '''torch_images = torch.Tensor(images)
 
                         torch_images = torch_images.permute(0, 3, 1, 2)
                         
@@ -270,8 +292,9 @@ class LCNCreator:
 
                         # last_conv_layer_out_channels = outputs.size(1)
                         images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                        # output_shape = images.shape
-            
+                        # output_shape = images.shape'''
+                        if new_module_name in self._to_save_outputs:
+                            self._outputs[new_module_name] = images
             else:
         
                 _assert_params(layer_config)
@@ -303,14 +326,14 @@ class LCNCreator:
                     operation_params['in_channels'] = last_conv_layer_out_channels
                     
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
-                        operation_params["number_of_kernels_per_marker"] = operation_params["out_channels"]//np.array(markers).max()
-                        
+                        operation_params["number_of_kernels_per_marker"] = math.ceil(operation_params["out_channels"]/np.array(markers).max())
+            
                     layer = operation(**operation_params,
                                       default_std=self._default_std,
                                       activation_config=activation_config,
                                       pool_config=pool_config)
                     if (images is None or markers is None) and state_dict is not None:
-                        kernels_number = state_dict[f'feature_extractor.{key}.conv.weight'].size(0)
+                        kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
                         layer.initialize_weights(kernels_number=kernels_number)
                     elif (images is None or markers is None) and 'out_channels' in operation_params:
                         layer.initialize_weights(kernels_number=operation_params['out_channels'])
@@ -433,8 +456,12 @@ class LCNCreator:
                             
                         images = outputs.permute(0, 2, 3, 1).detach().numpy()
                         # output_shape = list(images.shape)
+
+                        if new_module_name in self._to_save_outputs:
+                            self._outputs[new_module_name] = images
                 layer.train()
                 module.add_module(key, layer)
+
 
         output_shape[2] = last_conv_layer_out_channels
 
@@ -741,3 +768,39 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
       new_markers.append(new_marker)
 
     return np.array(new_markers)
+
+
+def _find_skip_connections_in_module(module_name, module):
+    skips = dict()
+
+    layers = module['layers']
+
+    for layer_name, layer_config in layers.items():
+        key_name = f"{module_name}.{layer_name}" if module_name is not None else layer_name
+
+        if 'type' in layer_config:
+            submodules_skips = _find_skip_connections_in_module(key_name, layer_config)
+
+            skips.update(submodules_skips)
+            
+        if "inputs" in layer_config:
+            skips[key_name] = layer_config['inputs']
+    
+    return skips
+
+def _find_skip_connections(arch):
+    if "features" in arch:
+        arch = arch['features']
+
+    skips = _find_skip_connections_in_module(None, arch)
+
+    return skips
+
+def _find_outputs_to_save(skips):
+    outputs_to_save = {}
+    for _, inputs in skips.items():
+        
+        for layer_name in inputs:
+            outputs_to_save[layer_name] = True
+
+    return outputs_to_save
