@@ -125,12 +125,14 @@ class LCNCreator:
 
         self._default_std = default_std
         
-        self.LCN = LIDSConvNet(remove_boder=remove_border)
 
         self._outputs = dict()
-        self._to_save_outputs = dict()
-        self._skips = dict()
+
+        self._skips = _find_skip_connections(self._architecture)
+        self._to_save_outputs = _find_outputs_to_save(self._skips)
         
+        self.LCN = LIDSConvNet(skips=self._skips, outputs_to_save=self._to_save_outputs, remove_boder=remove_border)
+
     def build_feature_extractor(self,
                                 remove_similar_filters=False,
                                 similarity_level=0.85):
@@ -156,9 +158,6 @@ class LCNCreator:
             images = self._images
             markers = self._markers
 
-            self._skips = _find_skip_connections(self._architecture)
-            self._to_save_outputs = _find_outputs_to_save(self._skips)
-
             if "input" in self._to_save_outputs:
                 self._outputs['input'] = images
             
@@ -169,7 +168,7 @@ class LCNCreator:
             if self._has_superpixel_markers:
                 markers += self._superpixel_markers
 
-            module, out_channels = self._build_module(None,
+            module, out_channels, _, _ = self._build_module(None,
                                         architecture,
                                         images,
                                         markers,
@@ -263,7 +262,7 @@ class LCNCreator:
             print(f"Building {key}")
         
             if "type" in layer_config:
-                _module, last_conv_layer_out_channels = self._build_module(new_module_name,
+                _module, last_conv_layer_out_channels, images, markers = self._build_module(new_module_name,
                                                                            layer_config,
                                                                            images,
                                                                            markers,
@@ -274,6 +273,7 @@ class LCNCreator:
                     module.append(_module)
                 else:
                     module.add_module(key, _module)
+
                     if images is not None and markers is not None:
                         '''torch_images = torch.Tensor(images)
 
@@ -293,8 +293,10 @@ class LCNCreator:
                         # last_conv_layer_out_channels = outputs.size(1)
                         images = outputs.permute(0, 2, 3, 1).detach().numpy()
                         # output_shape = images.shape'''
+                        
                         if new_module_name in self._to_save_outputs:
                             self._outputs[new_module_name] = images
+                        
             else:
         
                 _assert_params(layer_config)
@@ -324,10 +326,10 @@ class LCNCreator:
                         if markers is not None:
                             markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)'''
                     operation_params['in_channels'] = last_conv_layer_out_channels
-                    
+
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
                         operation_params["number_of_kernels_per_marker"] = math.ceil(operation_params["out_channels"]/np.array(markers).max())
-            
+
                     layer = operation(**operation_params,
                                       default_std=self._default_std,
                                       activation_config=activation_config,
@@ -471,7 +473,7 @@ class LCNCreator:
 
         self._output_shape = output_shape
         
-        return module, last_conv_layer_out_channels
+        return module, last_conv_layer_out_channels, images, markers
     
     def build_classifier(self, train_set=None, state_dict=None):
         """Buid the classifier."""
@@ -479,7 +481,7 @@ class LCNCreator:
         model = self.LCN
 
         if model is None:
-            model = LIDSConvNet()
+            model = LIDSConvNet(self._remove_border, self._skips, self._to_save_outputs)
             self.LCN = model
 
         classifier = model.classifier

@@ -24,21 +24,40 @@ class LIDSConvNet(nn.Sequential):
 
     """
 
-    def __init__(self, remove_boder=0):
+    def __init__(self, remove_boder=0, skips=None, outputs_to_save=None):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self.feature_extractor = nn.Sequential()
         # self.features = self.feature_extractor
         self.classifier = nn.Sequential()
         self._remove_border = remove_boder
+
+        self._skips = skips
+        self._outputs_to_save = outputs_to_save
+
         self._logger = logging.getLogger()
 
     
     def extract_features(self, x):
-        for layer_name, layer in self.feature_extractor.named_children():
-               
-            _y = layer.forward(x)
-            x = _y
+        outputs = dict()
+        if 'input' in self._outputs_to_save:
+            outputs['input'] = x
+
+        for layer_name, layer in self.feature_extractor.named_modules():
+
+            if layer_name in self._skips:
+                concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
+                x = concat
+
+            if isinstance(layer, (nn.Sequential, ParallelModule)) or "._" in layer_name:
+                continue
+            
+            y = layer(x)
+
+            if layer_name in self._outputs_to_save:
+                outputs[layer_name] = y
+
+            x = y
 
             b = self._remove_border
             
