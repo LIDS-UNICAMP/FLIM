@@ -393,7 +393,7 @@ class LCNCreator:
                         input_size = torch_images.size(0)
                         
                         outputs = torch.Tensor([])
-                        layer = layer.to(self.device)
+                        layer = _layer.to(self.device)
                         
                         for i in range(0, input_size, batch_size):
                             batch = torch_images[i: i+batch_size]
