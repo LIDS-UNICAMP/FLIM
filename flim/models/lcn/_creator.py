@@ -16,7 +16,8 @@ from scipy.spatial import distance
 import numpy as np
 from torch.nn.modules import module, padding
 
-from._special_linear_layer import SpecialLinearLayer
+from ._special_linear_layer import SpecialLinearLayer
+from ._marker_based_norm import MarkerBasedNorm
 from ._lcn import LIDSConvNet, ParallelModule
 from ._decoder import Decoder
 
@@ -30,6 +31,7 @@ __operations__ = {
     "conv2d": nn.Conv2d,
     "relu": nn.ReLU,
     "linear": SpecialLinearLayer,
+    'marker_based_norm': MarkerBasedNorm,
     "batch_norm2d": nn.BatchNorm2d,
     "dropout": nn.Dropout,
     "adap_avg_pool2d": nn.AdaptiveAvgPool2d,
@@ -167,7 +169,7 @@ class LCNCreator:
             if "input" in self._to_save_outputs:
                 self._outputs['input'] = images
             
-            if self._relabel_markers:
+            if self._relabel_markers and markers is not None:
                 start_label = 2 if self._has_superpixel_markers else 1
                 markers = label_connected_components(markers, start_label)
 
@@ -351,11 +353,14 @@ class LCNCreator:
                                                          in_channels,
                                                          out_channels=out_channels,
                                                          kernel_size=kernel_size,
-                                                         padding=padding,
                                                          dilation=dilation,
                                                          number_of_kernels_per_marker=number_of_kernels_per_marker,
                                                          use_random_kernels=use_random_kernels,
                                                          default_std=default_std)
+                                                         
+                    if out_channels is None:
+                        out_channels = weights.shape[0]
+                    
                     layer = nn.Conv2d(in_channels,
                                       out_channels,
                                       kernel_size,
@@ -372,7 +377,38 @@ class LCNCreator:
                         layer = _remove_similar_filters(layer, similarity_level)
                         
                     last_conv_layer_out_channels = layer.out_channels
+
+                elif layer_config['operation'] == 'marker_based_norm':
+
+                    if images is None or markers is None:
+                        mean = None
+                        std = None
+                    else:
+                        kernel_size = operation_params['kernel_size']
+                        dilation = operation_params.get('dilation', 0)
+                        in_channels = last_conv_layer_out_channels
+
+                        if isinstance(dilation, int):
+                            dilation = [dilation, dilation]
+
+                        if isinstance(kernel_size, int):
+                            kernel_size = [kernel_size, kernel_size]
+
+                        patches, _ = _generate_patches(images,
+                                                       markers,
+                                                       in_channels,
+                                                       kernel_size,
+                                                       dilation)
+
+        
+                        mean = torch.from_numpy(patches.mean(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
+                        std = torch.from_numpy(patches.std(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
                     
+                    layer = MarkerBasedNorm(mean=mean,
+                                            std=std,
+                                            in_channels=last_conv_layer_out_channels,
+                                            default_std=self._default_std)
+
                 elif layer_config['operation'] == "batch_norm2d":
                     layer = operation(
                         num_features=last_conv_layer_out_channels)
@@ -986,8 +1022,7 @@ def _initialize_conv2d_weights(images=None,
                                in_channels=3,
                                out_channels=None,
                                kernel_size=None,
-                               padding=[0, 0],
-                               dilation=[0, 0],
+                               dilation=[1, 1],
                                number_of_kernels_per_marker=16,
                                use_random_kernels=False,
                                default_std=0.1):

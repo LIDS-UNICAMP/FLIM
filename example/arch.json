@@ -2,6 +2,13 @@
     "features": {
         "type": "sequential",
         "layers": {
+            "m_norm": {
+                "operation": "marker_based_norm",
+                "params": {
+                    "kernel_size": 5,
+                    "dilation": 1
+                }
+            },
             "conv": {
                 "operation": "conv2d",
                 "params": {
