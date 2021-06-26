@@ -1,5 +1,6 @@
 import warnings
 import os
+from PIL import Image
 
 from torch.utils.data import Dataset
 
@@ -15,7 +16,7 @@ try:
 except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
-__all__ = ["LIDSDataset", "ToTensor"]
+__all__ = ["LIDSDataset", "ToTensor", "ToLAB"]
 
 class LIDSDataset(Dataset):
     def __init__(self, root_dir, split_dir=None, transform=None, return_name=False):
@@ -137,3 +138,12 @@ class ToTensor(object):
             image = image.transpose((2, 0, 1))
         
         return torch.from_numpy(image.copy()).float()
+
+class ToLAB(object):
+    def __call__(self, sample):
+        image = np.array(sample)
+
+        image = rgb2lab(image)
+        image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3) 
+
+        return Image.fromarray(image.astype(np.uint8))       

@@ -16,6 +16,7 @@
                     "stride": 1,
                     "padding": 2,
                     "dilation": 1,
+                    "out_channels": 64,
                     "number_of_kernels_per_marker": 64
                 }
             },
@@ -39,6 +40,31 @@
             "norm1": {
                 "operation": "batch_norm2d",
                 "params": {}
+            },
+
+            "m_norm2": {
+                "operation": "marker_based_norm",
+                "params": {
+                    "kernel_size": 5,
+                    "dilation": 1
+                }
+            },
+            "conv2": {
+                "operation": "conv2d",
+                "params": {
+                    "kernel_size": 5,
+                    "stride": 1,
+                    "padding": 2,
+                    "dilation": 1,
+                    "out_channels": 64,
+                    "number_of_kernels_per_marker": 64
+                }
+            },
+            "activation2": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
             }
         }
     }

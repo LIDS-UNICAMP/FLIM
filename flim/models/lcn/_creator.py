@@ -192,7 +192,7 @@ class LCNCreator:
     def load_model(self, state_dict):
         architecture = self._architecture
 
-        module, out_channels = self._build_module(architecture['features'],
+        module, out_channels = self._build_module("", architecture['features'],
                                                   state_dict=state_dict)
 
         self.last_conv_layer_out_channels = out_channels
