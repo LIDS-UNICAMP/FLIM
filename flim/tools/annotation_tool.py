@@ -240,85 +240,84 @@ def create_viewer(image_dir,
     else:
         super_pixels = initial
 
-    with napari.gui_qt():
+    viewer = napari.Viewer(title="Interative tool.")
+    viewer.add_image(image, name="image")
 
-        viewer = napari.Viewer(title="Interative tool.")
-        viewer.add_image(image, name="image")
+    if super_pixels is not None:
+        boundaries = find_boundaries(super_pixels,
+                                        connectivity=2,
+                                        mode="inner").astype(np.int)
+        boundaries[boundaries != 0] = 9
+        viewer.add_labels(boundaries, name='superpixels', opacity=1)
+    else:
+        viewer.add_labels(initial, name='superpixels', opacity=1)
 
-        if super_pixels is not None:
-            boundaries = find_boundaries(super_pixels,
-                                         connectivity=2,
-                                         mode="inner").astype(np.int)
-            boundaries[boundaries != 0] = 9
-            viewer.add_labels(boundaries, name='superpixels', opacity=1)
-        else:
-            viewer.add_labels(initial, name='superpixels', opacity=1)
+    if mask is not None:
+        viewer.add_labels(mask, name='mask', opacity=.5)
 
-        if mask is not None:
-            viewer.add_labels(mask, name='mask', opacity=.5)
+    viewer.add_labels(markers, name='markers', opacity=1)
 
-        viewer.add_labels(markers, name='markers', opacity=1)
+    @viewer.bind_key('r')
+    def refresh(viewer):
+        initial = np.zeros(image.shape[:2], dtype=np.int)
+        viewer.layers['markers'].data = initial
+        # viewer.layers['instability map'].data = initial
 
-        @viewer.bind_key('r')
-        def refresh(viewer):
-            initial = np.zeros(image.shape[:2], dtype=np.int)
-            viewer.layers['markers'].data = initial
-            # viewer.layers['instability map'].data = initial
+    
+    @magicgui(
+        call_button="Save markers"
+    )
+    def save_markers():
+        print("Saving markers...")
+        nonlocal markers_dir
+        markers = viewer.layers['markers'].data
+
+        if markers_dir is None:
+            markers_dir = image_dir.split('.')[0] + ".txt"
+        with wait_cursor(): 
+            _save_markers(markers, markers_dir)
+        print("Markers saved.")
+
+
+    if ift is not None:
+    
+        @magicgui(
+            call_button="Propagate markers"
+        )
+        def propagate_markers():
+            markers = viewer.layers['markers'].data
+            new_markers = turn_superpixels_borders_in_markers(super_pixels, markers)
+            viewer.layers['markers'].data = new_markers
 
         
         @magicgui(
-            call_button="Save markers"
+            call_button="Compute superpixels",
+            n_superpixels={"widget_type": FloatSlider, "max": 5000},
         )
-        def save_markers():
-            print("Saving markers...")
-            nonlocal markers_dir
-            markers = viewer.layers['markers'].data
-
-            if markers_dir is None:
-                markers_dir = image_dir.split('.')[0] + ".txt"
+        def compute_superpixels(n_superpixels=0):
+            nonlocal super_pixels
+            n_superpixels = math.floor(n_superpixels)
             with wait_cursor(): 
-                _save_markers(markers, markers_dir)
-            print("Markers saved.")
-
-
-        if ift is not None:
+                if n_superpixels > 0:
+                    print(n_superpixels)
+                    super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
+                    boundaries = find_boundaries(super_pixels,
+                                                connectivity=1,
+                                                mode="inner").astype(np.int)
+                    boundaries[boundaries != 0] = 9
+                    print(boundaries.max())
+                    viewer.layers['superpixels'].data = boundaries
         
-            @magicgui(
-                call_button="Propagate markers"
-            )
-            def propagate_markers():
-                markers = viewer.layers['markers'].data
-                new_markers = turn_superpixels_borders_in_markers(super_pixels, markers)
-                viewer.layers['markers'].data = new_markers
+        compute_superpixels_button = compute_superpixels
+        viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
 
-            
-            @magicgui(
-                call_button="Compute superpixels",
-                n_superpixels={"widget_type": FloatSlider, "max": 5000},
-            )
-            def compute_superpixels(n_superpixels=0):
-                nonlocal super_pixels
-                n_superpixels = math.floor(n_superpixels)
-                with wait_cursor(): 
-                    if n_superpixels > 0:
-                        print(n_superpixels)
-                        super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
-                        boundaries = find_boundaries(super_pixels,
-                                                    connectivity=1,
-                                                    mode="inner").astype(np.int)
-                        boundaries[boundaries != 0] = 9
-                        print(boundaries.max())
-                        viewer.layers['superpixels'].data = boundaries
-            
-            compute_superpixels_button = compute_superpixels
-            viewer.window.add_dock_widget(compute_superpixels_button, area="bottom")
+        propagate_markers_button = propagate_markers
+        viewer.window.add_dock_widget(propagate_markers_button, area="bottom")
+    
 
-            propagate_markers_button = propagate_markers
-            viewer.window.add_dock_widget(propagate_markers_button, area="bottom")
-        
-
-        save_markers_button = save_markers
-        viewer.window.add_dock_widget(save_markers_button, area="bottom")
+    save_markers_button = save_markers
+    viewer.window.add_dock_widget(save_markers_button, area="bottom")
+    napari.run()
     
 
 def main():
