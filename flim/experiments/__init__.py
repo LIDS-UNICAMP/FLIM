@@ -1,5 +1,5 @@
 """Helpers to perform experiments with FLIM"""
 
-from ._dataset import LIDSDataset, ToTensor
+from ._dataset import LIDSDataset, ToTensor, ToLAB
 
-__all__ = ["LIDSDataset", "ToTensor"]
+__all__ = ["LIDSDataset", "ToTensor", "ToLAB"]

@@ -6,11 +6,18 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-import numpy as np
-from torch.nn.modules import module
+from skimage.util import view_as_windows
 
-from ._special_conv_layer import SpecialConvLayer
-from._special_linear_layer import SpecialLinearLayer
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+
+from scipy.spatial import distance
+
+import numpy as np
+from torch.nn.modules import module, padding
+
+from ._special_linear_layer import SpecialLinearLayer
+from ._marker_based_norm import MarkerBasedNorm
 from ._lcn import LIDSConvNet, ParallelModule
 from ._decoder import Decoder
 
@@ -21,9 +28,10 @@ __all__ = ['LCNCreator']
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
     "avg_pool2d": nn.AvgPool2d,
-    "conv2d": SpecialConvLayer,
+    "conv2d": nn.Conv2d,
     "relu": nn.ReLU,
     "linear": SpecialLinearLayer,
+    'marker_based_norm': MarkerBasedNorm,
     "batch_norm2d": nn.BatchNorm2d,
     "dropout": nn.Dropout,
     "adap_avg_pool2d": nn.AdaptiveAvgPool2d,
@@ -161,7 +169,7 @@ class LCNCreator:
             if "input" in self._to_save_outputs:
                 self._outputs['input'] = images
             
-            if self._relabel_markers:
+            if self._relabel_markers and markers is not None:
                 start_label = 2 if self._has_superpixel_markers else 1
                 markers = label_connected_components(markers, start_label)
 
@@ -184,7 +192,7 @@ class LCNCreator:
     def load_model(self, state_dict):
         architecture = self._architecture
 
-        module, out_channels = self._build_module(architecture['features'],
+        module, out_channels = self._build_module("", architecture['features'],
                                                   state_dict=state_dict)
 
         self.last_conv_layer_out_channels = out_channels
@@ -305,48 +313,102 @@ class LCNCreator:
                 operation_params = layer_config['params']
                 
                 if layer_config['operation'] == "conv2d":
-                    activation_config = None
-                    pool_config = None
 
-                    '''if 'activation' in layer_config:
-                        activation_config = layer_config['activation']
-                    if 'pool' in layer_config:
-                        pool_config = layer_config['pool']
+                    number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", 16)
+                    use_random_kernels = operation_params.get("use_random_kernels", False)
+                    use_pca = operation_params.get("use_pca", False)
 
-                        stride = pool_config['params']['stride']
-                        padding = pool_config['params']['padding']
-                        kernel_size = pool_config['params']['kernel_size']
-                        
-                        if isinstance(kernel_size, int):
-                            kernel_size = [kernel_size, kernel_size]
-                        
-                        output_shape[0] = (output_shape[0] + 2*padding - math.floor((kernel_size[0]-1)/2))//stride
-                        output_shape[1] = (output_shape[1] + 2*padding - math.floor((kernel_size[1]-1)/2))//stride
-                        
-                        if markers is not None:
-                            markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)'''
-                    operation_params['in_channels'] = last_conv_layer_out_channels
+    
+                    kernel_size = operation_params['kernel_size']
+                    stride = operation_params.get('stride', 0)
+                    padding = operation_params.get('padding', 0)
+                    padding_mode = operation_params.get('padding_mode', 'zeros')
+                    dilation = operation_params.get('dilation', 0)
+                    groups = operation_params.get('groups', 1)
+                    bias = operation_params.get('bias', False)
+                
+                    out_channels = operation_params.get('out_channels', None)
+                    
+                    in_channels = last_conv_layer_out_channels
+
+                    if isinstance(dilation, int):
+                        dilation = [dilation, dilation]
+
+                    if isinstance(padding, int):
+                        padding = [padding, padding]
+
+                    if isinstance(kernel_size, int):
+                        kernel_size = [kernel_size, kernel_size]
 
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
-                        operation_params["number_of_kernels_per_marker"] = math.ceil(operation_params["out_channels"]/np.array(markers).max())
+                        number_of_kernels_per_marker = math.ceil(operation_params["out_channels"]/np.array(markers).max())
 
-                    layer = operation(**operation_params,
-                                      default_std=self._default_std,
-                                      activation_config=activation_config,
-                                      pool_config=pool_config)
+                    default_std=self._default_std
+
                     if (images is None or markers is None) and state_dict is not None:
-                        kernels_number = state_dict[f'feature_extractor.{key}._conv.weight'].size(0)
-                        layer.initialize_weights(kernels_number=kernels_number)
-                    elif (images is None or markers is None) and 'out_channels' in operation_params:
-                        layer.initialize_weights(kernels_number=operation_params['out_channels'])
-                    else:
-                        layer.initialize_weights(images, markers)
+                        out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
+
+                    weights = _initialize_conv2d_weights(images,
+                                                         markers,
+                                                         in_channels,
+                                                         out_channels=out_channels,
+                                                         kernel_size=kernel_size,
+                                                         dilation=dilation,
+                                                         number_of_kernels_per_marker=number_of_kernels_per_marker,
+                                                         use_random_kernels=use_random_kernels,
+                                                         default_std=default_std)
+                                                         
+                    if out_channels is None:
+                        out_channels = weights.shape[0]
+                    
+                    layer = nn.Conv2d(in_channels,
+                                      out_channels,
+                                      kernel_size,
+                                      stride,
+                                      padding,
+                                      dilation,
+                                      groups,
+                                      bias,
+                                      padding_mode)
+
+                    layer.weight = nn.Parameter(torch.from_numpy(weights))
 
                     if remove_similar_filters:
-                        layer.remove_similar_filters(similarity_level)
+                        layer = _remove_similar_filters(layer, similarity_level)
                         
                     last_conv_layer_out_channels = layer.out_channels
+
+                elif layer_config['operation'] == 'marker_based_norm':
+
+                    if images is None or markers is None:
+                        mean = None
+                        std = None
+                    else:
+                        kernel_size = operation_params['kernel_size']
+                        dilation = operation_params.get('dilation', 0)
+                        in_channels = last_conv_layer_out_channels
+
+                        if isinstance(dilation, int):
+                            dilation = [dilation, dilation]
+
+                        if isinstance(kernel_size, int):
+                            kernel_size = [kernel_size, kernel_size]
+
+                        patches, _ = _generate_patches(images,
+                                                       markers,
+                                                       in_channels,
+                                                       kernel_size,
+                                                       dilation)
+
+        
+                        mean = torch.from_numpy(patches.mean(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
+                        std = torch.from_numpy(patches.std(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
                     
+                    layer = MarkerBasedNorm(mean=mean,
+                                            std=std,
+                                            in_channels=last_conv_layer_out_channels,
+                                            default_std=self._default_std)
+
                 elif layer_config['operation'] == "batch_norm2d":
                     layer = operation(
                         num_features=last_conv_layer_out_channels)
@@ -565,99 +627,6 @@ class LCNCreator:
                         nn.init.constant_(m._linear.bias, 0)   
         torch.cuda.empty_cache()
 
-    def update_model(self,
-                     model,
-                     images,
-                     markers,
-                     relabel_markers=True,
-                     retrain=False,
-                     remove_similar_filters=False,
-                     similarity_level=0.85):
-        """Update model with new image markers.
-
-        Update the model feature extractor with new markers.
-        It adds new filters based on new markers.
-        If the old markers are used, the whole model is retrained.
-
-        Parameters
-        ----------
-        model : LIDSConvNet
-            A LIDSConvNet model.
-        images : ndarray
-            A set of images with size :math:`(N, H, W, C)`.
-        markers : ndarray
-            A set of image markes as label images with size :math:`(N, H, W)`.\
-            The label 0 denote no label.
-        relabel_markers : bool, optional
-            Change markers labels so that each connected component has a \
-            different label, by default True.
-        retrain : bool, optional
-            If False, new filters are created from the new markers.
-            If True, the whole model is retrained. By default Fasle.
-            Pass True if there are new images.
-        remove_similar_filters : bool, optional
-            Keep only one of a set of similar filters, by default False.
-        similarity_level : float, optional
-            A value in range :math:`(0, 1]`. \
-            If filters have inner product greater than value, \
-            only one of them are kept. by default 0.85.
-    
-        """
-        assert model is not None or not isinstance(model, LIDSConvNet), \
-            "A LIDSConvNet model must be provided"
-
-        assert images is not None and markers is not None and \
-            images.shape[0] > 0, "Images and markers must be provided"
-        
-        assert images.shape[:-1] == markers.shape, \
-            "Images and markers must have compatible shapes"
-        
-        if retrain:
-            self._images = images
-            self._markers = markers
-            self.build_feature_extractor(
-                remove_similar_filters, similarity_level)
-            return
-
-        markers = markers.astype(np.int)
-
-        _images = images
-        old_markers = self._markers
-
-        new_markers = markers
-        mask = np.logical_and(markers != 0, old_markers != 0)
-        new_markers[mask] = 0
-
-        start_label = 2 if self._has_superpixel_markers else 1
-
-        old_markers_relabeled = label_connected_components(old_markers, start_label)
-        if self._has_superpixel_markers:
-            old_markers_relabeled += self._superpixel_markers
-
-        new_makers_relabeled = label_connected_components(new_markers, start_label)
-
-        for _, layer in model.feature_extractor.named_children():
-            if isinstance(layer, SpecialConvLayer):
-                if isinstance(_images, torch.Tensor):
-                    _images = _images.detach().permute(
-                        0, 2, 3, 1).cpu().numpy()
-                layer.update_weights(_images, old_markers_relabeled, new_makers_relabeled)
-
-                if remove_similar_filters:
-                    layer.remove_similar_filters(similarity_level)
-
-                layer.to(self.device)
-                torch_images = torch.Tensor(_images)
-                torch_images = torch_images.permute(0, 3, 1, 2).to(self.device)
-                _images = torch_images
-
-            _y = layer.forward(_images)
-            _images = _y
-
-        markers[mask] = old_markers[mask]
-
-        self._markers = markers
-
     def remove_filters(self, layer_index, filter_indices):
         """Remove layer's filters.
 
@@ -806,3 +775,373 @@ def _find_outputs_to_save(skips):
             outputs_to_save[layer_name] = True
 
     return outputs_to_save
+
+
+def _create_random_kernels(n ,in_channels, kernel_size):
+    kernels = np.random.rand(n, in_channels, *kernel_size)
+
+    return kernels
+
+def _enforce_norm(kernels):
+    kernels_shape = kernels.shape
+    flattened_kernels = kernels.reshape(kernels_shape[0], -1)
+
+    norm = np.linalg.norm(flattened_kernels, axis=1, keepdims=True)
+
+    normalized = flattened_kernels/norm
+
+    mean = normalized.mean(axis=1, keepdims=True)
+
+    centered = normalized - mean
+
+    centered = centered.reshape(*kernels_shape)
+
+    return centered
+
+def _create_random_pca_kernels(n, k, in_channels, kernel_size):
+
+    if isinstance(kernel_size, int):
+      kernel_size = [kernel_size]*2
+    elif isinstance(kernel_size, list) and len(kernel_size) == 1:
+      kernel_size = kernel_size*2
+
+    kernels = _enforce_norm(_create_random_kernels(n, in_channels, kernel_size))
+
+    kernels_pca = _select_kernels_with_pca(kernels, k)
+
+    return kernels_pca
+
+def _select_kernels_with_pca(kernels, k):
+    kernels_shape = kernels.shape
+
+    kernels_flatted = kernels.reshape(kernels_shape[0], -1)
+    if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
+        k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
+
+    pca = PCA(n_components=k)
+    pca.fit(kernels_flatted)
+
+    kernels_pca = pca.components_
+
+    kernels_pca = kernels_pca.reshape(-1, *kernels_shape[1:])
+
+    return kernels_pca
+
+def _generate_patches(images,
+                      markers,
+                      in_channels,
+                      kernel_size,
+                      dilation):
+        """Get patches from markers pixels.
+
+        Get a patch of size :math:`k \times k` around each markers pixel.
+        
+        ----------
+        images : ndarray
+            Array of images with shape :math:`(N, H, W, C)`.
+        markers : list
+            List of markers. For each image there is an ndarry with shape \
+            :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, \
+            second row is the markers pixels :math:`y`-coordinates, \
+            and the third row is the markers pixel labels.
+        in_channels : int
+            The input channel number.
+        kernel_size : int, optional
+            The kernel dimensions. \
+            If a single number :math:`k` if provided, it will be interpreted \
+            as a kernel :math:`k \times k`, by default 3.
+        padding : int, optional
+            The number of zeros to add to pad, by default 1.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray]
+            A array with all genereated pacthes and \
+            an array with the label of each patch.
+        
+        """
+        all_patches, all_labels = None, None
+        for image, image_markers in zip(images, markers):
+            if len(image_markers) == 0:
+                continue
+
+            kernel_size = np.array(kernel_size)
+            dilation = np.array(dilation)
+
+            dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
+            dilated_padding = dilated_kernel_size // 2
+            image_pad = np.pad(image, ((dilated_padding[0], dilated_padding[0]),
+                                    (dilated_padding[1], dilated_padding[1]), (0, 0)),
+                            mode='constant', constant_values=0)
+
+            patches = view_as_windows(image_pad,
+                                      (dilated_kernel_size[0], dilated_kernel_size[1], in_channels),
+                                      step=1)
+                                      
+            if dilation[0] > 1 or dilation[1] > 0:
+                r = np.arange(0, dilated_kernel_size[0], dilation[0])
+                s = np.arange(0, dilated_kernel_size[1], dilation[1])
+                patches = patches[:, :, :, r, : , :][:, :, :, :, s , :]
+
+            shape = patches.shape
+            image_shape = image.shape
+
+            indices = np.where(image_markers != 0)
+            markers_x = indices[0]
+            markers_y = indices[1]
+            labels = image_markers[indices] - 1
+            
+            mask = np.logical_and(
+                markers_x < image_shape[0], markers_y < image_shape[1])
+            
+            markers_x = markers_x[mask]
+            markers_y = markers_y[mask]
+            labels = labels[mask]
+
+            generated_patches = \
+                patches[markers_x, markers_y].reshape(-1, *shape[3:])
+            
+            if all_patches is None:
+                all_patches = generated_patches
+                all_labels = labels
+            else:
+                all_patches = np.concatenate((all_patches, generated_patches))
+                all_labels = np.concatenate((all_labels, labels))
+        
+        return all_patches, all_labels
+
+def _kmeans_roots(patches,
+                  labels,
+                  n_clusters_per_label,
+                  min_number_of_pacthes_per_label=16):
+    """Cluster patch and return the root of each custer.
+
+    Parameters
+    ----------
+    patches : ndarray
+        Array of patches with shape :math:`((N, H, W, C))`
+    labels : ndarray
+        The label of each patch with shape :nath:`(N,)`
+    n_clusters_per_label : int
+        The number os clusters per label.
+    min_number_of_pacthes_per_label : int, optional
+        The mininum number of patches of a given label \
+        for the clustering be performed , by default 16.
+
+    Returns
+    -------
+    ndarray
+        A array with all the roots.
+
+    """
+    roots = None
+    min_number_of_pacthes_per_label = n_clusters_per_label
+
+    possible_labels = np.unique(labels)
+    print("Number of patches", patches.shape[0])
+    for label in possible_labels:
+        patches_of_label = patches[label == labels].astype(np.float32)
+        # TODO get a value as arg.
+        if patches_of_label.shape[0] > min_number_of_pacthes_per_label:
+            # TODO remove fix random_state
+            #kmeans = MiniBatchKMeans(
+            #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
+
+            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
+            kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
+            
+            roots_of_label = kmeans.cluster_centers_
+        elif patches_of_label.shape[0] >= min_number_of_pacthes_per_label or \
+             roots is None:
+            roots_of_label = patches_of_label.reshape(
+                patches_of_label.shape[0], -1)
+        
+        else:
+            continue
+        
+        if roots is not None:
+            roots = np.concatenate((roots, roots_of_label))
+        else:
+            roots = roots_of_label
+    
+    roots = roots.reshape(-1, *patches.shape[1:])
+    return roots
+
+
+def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilation, number_of_kernels_per_marker, default_std):
+        """Calculate kernels weights from image markers.
+
+        Parameters
+        ----------
+        images : ndarray
+            Array of images with shape :math:`(N, H, W, C)`.
+        markers : list
+            List of markers. For each image there is an ndarry with shape \
+            :math:`3 \times N` where :math:`N` is the number of markers pixels.
+            The first row is the markers pixels :math:`x`-coordinates, \
+            second row is the markers pixels :math:`y`-coordinates, \
+            and the third row is the markers pixel labels.
+        updating : bool
+
+        Returns
+        -------
+        ndarray
+            Kernels weights in the shape \
+            :math:`(N \times C \times H \times W)`.
+        
+        """
+        patches, labels = _generate_patches(images,
+                                            markers,
+                                            in_channels,
+                                            kernel_size,
+                                            dilation)
+
+        
+        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
+        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+            
+        patches = (patches - mean_by_channel)/(std_by_channel + default_std)
+
+        kernel_weights = _kmeans_roots(patches,
+                                       labels,
+                                       number_of_kernels_per_marker)
+
+        kernels_shape = kernel_weights.shape
+        kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
+        norm = np.linalg.norm(kernel_weights, axis=1)
+        norm = np.expand_dims(norm, 1)
+        #print(norm)
+        kernel_weights = kernel_weights/(norm + 0.00001)
+        kernel_weights = kernel_weights.reshape(kernels_shape)
+        return kernel_weights
+
+
+def _initialize_conv2d_weights(images=None,
+                               markers=None,
+                               in_channels=3,
+                               out_channels=None,
+                               kernel_size=None,
+                               dilation=[1, 1],
+                               number_of_kernels_per_marker=16,
+                               use_random_kernels=False,
+                               default_std=0.1):
+        """Learn kernel weights from image markers.
+
+        Initialize layer with weights learned from image markers,
+        or with random kernels if no image and markers are passed.
+
+        Parameters
+        ----------
+        images : ndarray
+            Array of images with shape :math:`(N, H, W, C)`,
+            by default None.
+        markers : ndarray
+            A set of image markes as label images with size :math:`(N, H, W)`.\
+            The label 0 denote no label, by default None.
+        kernels_number: int
+            If no images and markers are passed, the number of kernels must \
+            must me specified. If images and markers are not None, \
+            this argument is ignored. 
+
+        """
+        if use_random_kernels:
+            kernels_weights = _create_random_pca_kernels(n=out_channels * 10,
+                                                         k=out_channels,
+                                                         in_channels=in_channels,
+                                                         kernel_size=kernel_size)
+            
+        elif images is not None and markers is not None:
+            kernels_weights = _calculate_conv2d_weights(images,
+                                                        markers,
+                                                        in_channels,
+                                                        kernel_size,
+                                                        dilation,
+                                                        number_of_kernels_per_marker,
+                                                        default_std=default_std)
+            kernels_weights = np.rollaxis(kernels_weights, 3, 1)
+
+            if  out_channels is not None and out_channels < kernels_weights.shape[0] and np.prod(kernels_weights.shape[1:]) > out_channels:
+                kernels_weights = _select_kernels_with_pca(kernels_weights, out_channels)
+        
+            elif out_channels is not None and out_channels < kernels_weights.shape[0]:
+                kernels_weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), out_channels)
+
+        else:
+            kernels_weights = torch.rand(out_channels,
+                                         in_channels,
+                                         kernel_size[0],
+                                         kernel_size[1]).numpy()
+
+        return kernels_weights
+
+def _compute_similarity_matrix(filters):
+    """Compute similarity matrix.
+
+    The similarity between two filter is the inner product between them.
+
+    Parameters
+    ----------
+    filters : torch.Tensor
+        Array of filters.
+
+    Returns
+    -------
+    ndarray
+        A matrix N x N.
+
+    """
+    assert filters is not None, "Filter must be provided"
+
+    _filters = filters.detach().flatten(1).cpu().numpy()
+
+    similiraty_matrix = distance.pdist(_filters, metric=np.inner)
+
+    return distance.squareform(similiraty_matrix)
+
+def _remove_similar_filters(layer, similarity_level=0.85):
+        """Remove redundant filters.
+
+        Remove redundant filter bases on inner product.
+
+        Parameters
+        ----------
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+            All filters in this layer has euclidean norm equal to 1.
+
+        """
+        assert 0 < similarity_level <= 1,\
+            "Similarity must be in range (0, 1]"
+
+        filters = layer.weight
+
+        similarity_matrix = _compute_similarity_matrix(filters)
+
+        keep_filter = np.full(filters.size(0), True, np.bool)
+
+        for i in range(0, filters.size(0)):
+            if keep_filter[i]:
+
+                mask = similarity_matrix[i] >= similarity_level
+                indices = np.where(mask)
+
+                keep_filter[indices] = False
+        
+        selected_filters = filters[keep_filter]
+
+        out_channels = selected_filters.size(0)
+
+        new_conv = nn.Conv2d(layer.in_channels,
+                             out_channels,
+                             kernel_size=layer.kernel_size,
+                             stride=layer.stride,
+                             bias=layer.bias,
+                             padding=layer.padding)
+
+        new_conv.weight = nn.Parameter(selected_filters)
+
+        return new_conv
+
