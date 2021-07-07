@@ -46,8 +46,6 @@ from skimage.color import lab2rgb
 from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
 
-from ._gradient_ascent import GradientAscent
-
 from PIL import Image
 
 import re
