@@ -12,9 +12,6 @@ from skimage.color import rgb2lab
 
 import numpy as np
 
-from numba import njit
-from skimage.color.colorconv import gray2rgb, rgba2rgb
-from sklearn.metrics.pairwise import _return_float_dtype
 
 import torch
 from torch.utils.data import DataLoader
@@ -43,7 +40,7 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, SpecialConvLayer, SpecialLinearLayer, LIDSConvNet
+from ..models.lcn import LCNCreator, MarkerBasedNorm, SpecialLinearLayer, LIDSConvNet
 from ._dataset import LIDSDataset
 
 from ._gradient_ascent import GradientAscent
@@ -81,7 +78,10 @@ def labf(x):
 
 def load_image(path):
     labf_v = np.vectorize(labf)
-    image = np.asarray(Image.open(path))
+    if path.endswith('.mimg'):
+        image = load_mimage(path)
+    else:
+        image = np.asarray(Image.open(path))
 
     image = image/image.max()
 
@@ -160,11 +160,93 @@ def load_images_and_markers(path):
 
     return np.array(images), np.array(images_markers)
 
+def _convert_arch_from_lids_format(arch):
+    stdev_factor = arch['stdev_factor']
+
+    n_layers = arch['nlayers']
+
+    n_arch = {
+        "type": "sequential",
+        "layers": {}
+    }
+
+    for i in range(1, n_layers + 1):
+        layer_name = f"layer{i}"
+        layer_params = arch[layer_name]
+
+        m_norm_layer = {
+            "operation": "marker_based_norm",
+            "params": {
+                "kernel_size": layer_params['conv']['kernel_size'][:2],
+                "dilation": layer_params['conv']['dilation_rate'][:2],
+                "default_std": stdev_factor
+            }
+        }
+
+        kernel_size = layer_params['conv']['kernel_size'][:2]
+
+        conv_layer = {
+            "operation": "conv2d",
+            "params": {
+                "kernel_size": kernel_size,
+                "dilation": layer_params['conv']['dilation_rate'][:2],
+                "number_of_kernels_per_marker": layer_params['conv']['nkernels_per_image'],
+                "padding": [kernel_size[0] // 2, kernel_size[1] // 2],
+                "out_channels": layer_params['conv']['noutput_channels'],
+                "stride": 1
+            }
+        }
+
+        relu_layer = None
+
+        if layer_params['relu']:
+            relu_layer = {
+                "operation": "relu",
+                "params": {
+                    "inplace": True
+                }
+            }
+
+        pool_type_mapping = {
+            "max_pool": "max_pool2d",
+            "avg_pool": "avg_pool2d",
+            "no_pool": None
+        }
+
+        pool_type = layer_params['pooling']['type']
+
+        assert pool_type in pool_type_mapping, f"{pool_type} is not a supported pooling operation"
+
+        if pool_type == "no_pool":
+            pool_layer = None
+        else:
+            pool_kernel_size = layer_params['pooling']['size'][:2]
+            pool_layer = {
+                "operation": pool_type_mapping[pool_type],
+                "params": {
+                    "kernel_size": pool_kernel_size,
+                    "stride": layer_params['pooling']['stride'],
+                    "padding": [pool_kernel_size[0] // 2, pool_kernel_size[1] // 2]
+                }
+            }
+
+        n_arch['layers'][f'm-norm{i}'] = m_norm_layer
+        n_arch['layers'][f'conv{i}'] = conv_layer
+        if relu_layer:
+            n_arch['layers'][f'activation{i}'] = relu_layer
+        if pool_layer:
+            n_arch['layers'][f'pool{i}'] = pool_layer
+
+    return {
+        "features": n_arch
+    }
+
 def load_architecture(architecture_dir):
     path = architecture_dir
     with open(path) as json_file:
         architecture = json.load(json_file)
-
+    if 'nlayers' in architecture:
+        architecture = _convert_arch_from_lids_format(architecture)
     return architecture
 
 def configure_dataset(dataset_dir, split_dir, transform=None):
@@ -173,8 +255,8 @@ def configure_dataset(dataset_dir, split_dir, transform=None):
     return dataset
 
 def build_model(architecture,
-                images,
-                markers,
+                images=None,
+                markers=None,
                 input_shape=None,
                 batch_size=32,
                 train_set=None,
@@ -427,23 +509,28 @@ def load_torchvision_model_weights(model, weigths_path):
     
     return model
     
-
-def load_lids_model(model, lids_model_dir, split):
+def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
-
-    if isinstance(split, str):
-        split_basename = os.path.basename(split)
-
-        split = re.findall(r'\d+', split_basename)
-
-        if len(split) == 0:
-            split = 1
-        else:
-            split = int(split[0])
 
     for name, layer in model.feature_extractor.named_children():
         print(name)
-        if isinstance(layer, SpecialConvLayer):
+        if isinstance(layer, MarkerBasedNorm):
+            conv_name = name.replace('m-norm', 'conv')
+            with open(os.path.join(lids_model_dir,
+                                            f"{conv_name}-mean.txt")) as f:
+                lines = f.readlines()[0]
+                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+                    
+            with open(os.path.join(lids_model_dir,
+                                        f"{conv_name}-stdev.txt")) as f:
+                lines = f.readlines()[0]
+                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+
+            
+            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
+            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
+
+        if isinstance(layer, nn.Conv2d):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
                                             f"{name}-kernels.npy"))
@@ -451,27 +538,16 @@ def load_lids_model(model, lids_model_dir, split):
                 in_channels = layer.in_channels
                 out_channels = layer.out_channels
                 kernel_size = layer.kernel_size
-                
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-mean.txt")) as f:
-                    lines = f.readlines()[0]
-                    mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
-                    
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-stdev.txt")) as f:
-                    lines = f.readlines()[0]
-                    std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            
                 
                 weights = weights.transpose()
                 weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], in_channels)
                 weights = weights.transpose(0, 3, 1, 2)
                 
-                layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
-                layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
                 
-                layer.conv.weight = nn.Parameter(torch.from_numpy(weights).float())
+                layer.weight = nn.Parameter(torch.from_numpy(weights).float())
     
-    for name, layer in model.classifier.named_children():
+    '''for name, layer in model.classifier.named_children():
         print(name)
         if isinstance(layer, SpecialLinearLayer):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
@@ -492,7 +568,7 @@ def load_lids_model(model, lids_model_dir, split):
                 layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
                 layer.std = torch.from_numpy(std.reshape(1, -1)).float()
                 
-                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())
+                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())'''
     print("Finish loading...")     
     return model
 

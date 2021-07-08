@@ -441,8 +441,9 @@ class LCNCreator:
                     if isinstance(kernel_size, int):
                         kernel_size = [kernel_size, kernel_size]
 
-                    output_shape[0] = math.floor((output_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
-                    output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
+                    if len(output_shape) > 1:
+                        output_shape[0] = math.floor((output_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
+                        output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
                     
                     operation_params['stride'] = 1
                     _layer = operation(**operation_params)
@@ -472,8 +473,9 @@ class LCNCreator:
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "adap_avg_pool2d":
-                    output_shape[0] = operation_params['output_size'][0]
-                    output_shape[1] = operation_params['output_size'][1]
+                    if len(output_shape) > 1:
+                        output_shape[0] = operation_params['output_size'][0]
+                        output_shape[1] = operation_params['output_size'][1]
                     
                     layer = operation(**operation_params)
                     
@@ -487,10 +489,10 @@ class LCNCreator:
                     layer.to(device)
 
                     output = layer(torch_image)
-
-                    output_shape[0] = 1
-                    output_shape[1] = 1
-                    output_shape[2] = output.shape[1]
+                    if len(output_shape) > 1:
+                        output_shape[0] = 1
+                        output_shape[1] = 1
+                    output_shape[-1] = output.shape[1]
 
                     last_conv_layer_out_channels = output.shape[1]
 
@@ -527,11 +529,12 @@ class LCNCreator:
                 module.add_module(key, layer)
 
 
-        output_shape[2] = last_conv_layer_out_channels
+        output_shape[-1] = last_conv_layer_out_channels
 
         if self._remove_border > 0:
-            output_shape[0] -= 2*self._remove_border
-            output_shape[1] -= 2*self._remove_border
+            if len(output_shape) > 1:
+                output_shape[0] -= 2*self._remove_border
+                output_shape[1] -= 2*self._remove_border
 
         self._output_shape = output_shape
         
