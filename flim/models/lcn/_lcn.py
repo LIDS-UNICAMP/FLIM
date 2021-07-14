@@ -7,7 +7,6 @@ import torch.nn as nn
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
 
-
 class LIDSConvNet(nn.Sequential):
 
     """A convolutional neural network.
@@ -49,7 +48,7 @@ class LIDSConvNet(nn.Sequential):
                 concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
                 x = concat
 
-            if isinstance(layer, (nn.Sequential, ParallelModule)) or "._" in layer_name:
+            if isinstance(layer, (nn.Sequential, ParallelModule)):
                 continue
             
             y = layer(x)
