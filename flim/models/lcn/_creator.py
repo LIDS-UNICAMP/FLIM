@@ -328,6 +328,9 @@ class LCNCreator:
                     bias = operation_params.get('bias', False)
                 
                     out_channels = operation_params.get('out_channels', None)
+
+                    assert out_channels or markers,\
+                        "`out_channels` or `markers` must be defined."
                     
                     in_channels = last_conv_layer_out_channels
                     if isinstance(dilation, int):
