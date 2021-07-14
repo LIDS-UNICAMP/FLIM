@@ -314,7 +314,7 @@ class LCNCreator:
                 
                 if layer_config['operation'] == "conv2d":
 
-                    number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", 16)
+                    number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", None)
                     use_random_kernels = operation_params.get("use_random_kernels", False)
                     use_pca = operation_params.get("use_pca", False)
 
@@ -330,7 +330,6 @@ class LCNCreator:
                     out_channels = operation_params.get('out_channels', None)
                     
                     in_channels = last_conv_layer_out_channels
-
                     if isinstance(dilation, int):
                         dilation = [dilation, dilation]
 
@@ -343,11 +342,15 @@ class LCNCreator:
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
                         number_of_kernels_per_marker = math.ceil(operation_params["out_channels"]/np.array(markers).max())
 
+
                     default_std=self._default_std
 
                     if (images is None or markers is None) and state_dict is not None:
                         out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
 
+                    assert out_channels is None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
+                        f"The number of kernels per marker is not enough to generate {out_channels} kernels."
+                    
                     weights = _initialize_conv2d_weights(images,
                                                          markers,
                                                          in_channels,
@@ -357,6 +360,9 @@ class LCNCreator:
                                                          number_of_kernels_per_marker=number_of_kernels_per_marker,
                                                          use_random_kernels=use_random_kernels,
                                                          default_std=default_std)
+
+                    assert weights.shape[0] == out_channels, \
+                        f"Weights with {weights.shape} is not correct."
                                                          
                     if out_channels is None:
                         out_channels = weights.shape[0]
@@ -446,6 +452,8 @@ class LCNCreator:
                         output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
                     
                     operation_params['stride'] = 1
+                    operation_params['padding'] = [kernel_size[0]//2, kernel_size[1]//2]
+                    
                     _layer = operation(**operation_params)
 
                     if images is not None and markers is not None:    
@@ -453,7 +461,8 @@ class LCNCreator:
 
                         torch_images = torch_images.permute(0, 3, 1, 2)
                         
-                        input_size = torch_images.size(0)
+                        input_shape = torch_images.shape
+                        input_size = input_shape[0]
                         
                         outputs = torch.Tensor([])
                         layer = _layer.to(self.device)
@@ -464,12 +473,13 @@ class LCNCreator:
                             output = output.detach().cpu()
                             outputs = torch.cat((outputs, output))
                             
-                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                        images = outputs.permute(0, 2, 3, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3]]
                     
                     #if markers is not None:
                     #    markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
 
                     operation_params['stride'] = stride
+                    operation_params['padding'] = padding
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "adap_avg_pool2d":
@@ -897,7 +907,7 @@ def _generate_patches(images,
             
             mask = np.logical_and(
                 markers_x < image_shape[0], markers_y < image_shape[1])
-            
+
             markers_x = markers_x[mask]
             markers_y = markers_y[mask]
             labels = labels[mask]
@@ -916,8 +926,7 @@ def _generate_patches(images,
 
 def _kmeans_roots(patches,
                   labels,
-                  n_clusters_per_label,
-                  min_number_of_pacthes_per_label=16):
+                  n_clusters_per_label):
     """Cluster patch and return the root of each custer.
 
     Parameters
@@ -928,9 +937,6 @@ def _kmeans_roots(patches,
         The label of each patch with shape :nath:`(N,)`
     n_clusters_per_label : int
         The number os clusters per label.
-    min_number_of_pacthes_per_label : int, optional
-        The mininum number of patches of a given label \
-        for the clustering be performed , by default 16.
 
     Returns
     -------
@@ -942,7 +948,6 @@ def _kmeans_roots(patches,
     min_number_of_pacthes_per_label = n_clusters_per_label
 
     possible_labels = np.unique(labels)
-    print("Number of patches", patches.shape[0])
     for label in possible_labels:
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
@@ -955,13 +960,11 @@ def _kmeans_roots(patches,
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             
             roots_of_label = kmeans.cluster_centers_
-        elif patches_of_label.shape[0] >= min_number_of_pacthes_per_label or \
-             roots is None:
+        # TODO is enough to check if is equal?
+        else:
             roots_of_label = patches_of_label.reshape(
                 patches_of_label.shape[0], -1)
-        
-        else:
-            continue
+
         
         if roots is not None:
             roots = np.concatenate((roots, roots_of_label))
@@ -999,8 +1002,6 @@ def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilatio
                                             in_channels,
                                             kernel_size,
                                             dilation)
-
-        
         mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
         std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
             
@@ -1014,7 +1015,7 @@ def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilatio
         kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
         norm = np.linalg.norm(kernel_weights, axis=1)
         norm = np.expand_dims(norm, 1)
-        #print(norm)
+        
         kernel_weights = kernel_weights/(norm + 0.00001)
         kernel_weights = kernel_weights.reshape(kernels_shape)
         return kernel_weights
@@ -1063,6 +1064,9 @@ def _initialize_conv2d_weights(images=None,
                                                         number_of_kernels_per_marker,
                                                         default_std=default_std)
             kernels_weights = np.rollaxis(kernels_weights, 3, 1)
+
+            assert out_channels is None or kernels_weights.shape[0] >= out_channels,\
+                "Not enough kernels were generated!!!"
 
             if  out_channels is not None and out_channels < kernels_weights.shape[0] and np.prod(kernels_weights.shape[1:]) > out_channels:
                 kernels_weights = _select_kernels_with_pca(kernels_weights, out_channels)
