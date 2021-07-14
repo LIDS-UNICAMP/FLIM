@@ -348,7 +348,7 @@ class LCNCreator:
                     if (images is None or markers is None) and state_dict is not None:
                         out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
 
-                    assert out_channels is None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
+                    assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
                         f"The number of kernels per marker is not enough to generate {out_channels} kernels."
                     
                     weights = _initialize_conv2d_weights(images,
