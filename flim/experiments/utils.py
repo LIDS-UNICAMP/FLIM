@@ -947,7 +947,7 @@ def load_mimage(path):
 
     return mimge.AsNumPy().squeeze()
 
-def save_mimgage(path, image):
+def save_mimage(path, image):
     assert ift is not None, "PyIFT is not available"
 
     mimage = ift.CreateMImageFromNumPy(np.ascontiguousarray(image))
