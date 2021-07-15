@@ -1,19 +1,19 @@
 from ast import Str
 import json
-from logging import root
+from logging import root, warn
 
 import os
-from typing import cast
-from warnings import catch_warnings
 import warnings
+from numpy.lib.type_check import imag
 
 from skimage import io
-from skimage.color import rgb2lab
+from skimage.color import rgb2lab, gray2rgb, rgba2rgb
 
 import numpy as np
-
+import numpy.typing as npt
 
 import torch
+
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
@@ -40,10 +40,12 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm, SpecialLinearLayer, LIDSConvNet
+from ..models.lcn import LCNCreator, MarkerBasedNorm, LIDSConvNet
 from ._dataset import LIDSDataset
 
 from PIL import Image
+
+import nibabel as nib
 
 import re
 
@@ -55,62 +57,43 @@ except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
-'''def load_image(image_dir):
-    image = io.imread(image_dir)
-
-    if image.ndim == 3 and image.shape[-1] == 4:
-        image = rgba2rgb(image)
-    elif image.ndim == 2:
-        image = gray2rgb(image)
-
-    image = rgb2lab(image)
-    
-    image = (image + (np.array([[0], [86.182236], [107.867744]])).reshape(1, 1, 3) )/(np.array([[99.998337], [86.182236 + 98.258614], [107.867744 + 94.481682]])).reshape(1, 1, 3)
-    return image'''
-
-def labf(x):
-    if x >= 8.85645167903563082e-3:
-        return x**(0.33333333333)
-    else:
-        return (841.0/108.0)*(x) + (4.0/29.0)
-
-def load_image(path):
-    labf_v = np.vectorize(labf)
+def load_image(path: str, lab: bool=True) -> npt.NDArray[np.float64]:
     if path.endswith('.mimg'):
         image = load_mimage(path)
+    elif path.endswith('.nii.gz') or path.endswith('.nii.gz'):
+        image = np.asanyarray(nib.load(path).dataobj)
     else:
         image = np.asarray(Image.open(path))
 
-    image = image/image.max()
+    if lab:
+        if image.ndim == 3 and image.shape[-1] == 4:
+            image = rgba2rgb(image)
+        elif image.ndim == 2 or image.shape[-1] == 1:
+            image = gray2rgb(image)
+        elif image.ndim == 3 and image.shape[-1] > 4:
+            image = gray2rgb(image)
+        elif image.ndim == 4 and image.shape[-1] == 4:
+            image = rgba2rgb(image)
 
-    new_image = np.zeros_like(image)
+        image = rgb2lab(image)
 
-    R, G, B = image[:, :, 0], image[:, :, 1], image[:, :, 2]
+    max_v = image.max()
+    min_v = image.min()
 
-    X = (0.4123955889674142161*R + 0.3575834307637148171*G + 0.1804926473817015735*B)
-    Y = (0.2125862307855955516*R + 0.7151703037034108499*G + 0.07220049864333622685*B)
-    Z = (0.01929721549174694484*R + 0.1191838645808485318*G + 0.9504971251315797660*B)
+    image = (image - min_v)/(max_v - min_v)
 
-    X = labf_v(X/0.950456)
-    Y = labf_v(Y/1.0)
-    Z = labf_v(Z/1.088754)
-
-    new_image[:, :, 0] = 116*Y -16
-    new_image[:, :, 1] = 500 * (X - Y)
-    new_image[:, :, 2] = 200 * (Y - Z)
-
-    #new_image = rgb2lab(image)
-
-    new_image[:, :, 0] = new_image[:, :, 0]/99.998337
-    new_image[:, :, 1] = (new_image[:, :, 1] + 86.182236)/(86.182236 + 98.258614)
-    new_image[:, :, 2] = (new_image[:, :, 2] + 107.867744)/(107.867744 + 94.481682)
-
-    return new_image
+    return image
 
 
 def image_to_rgb(image):
-    image = image*(np.array([[99.998337], [86.182236 + 98.258614], [107.867744 + 94.481682]])).reshape(1, 1, 3)
-    image = image - np.array([[0], [86.182236], [107.867744]]).reshape(1, 1, 3)
+    warnings.warn("'image_to_rgb' will be remove due to its misleading name",
+        "use 'from_lab_to_rgb' instead",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return from_lab_to_rgb(image)
+
+def from_lab_to_rgb(image):
     image = lab2rgb(image)
     return image
 
@@ -122,15 +105,23 @@ def load_markers(markers_dir):
     
     label_infos = [int(info) for info in lines[0].split(" ")]
 
-    image_shape = (label_infos[2], label_infos[1])
+    is_2d = len(label_infos) == 3
+
+    if is_2d:
+        image_shape = (label_infos[2], label_infos[1])
+    else:
+        image_shape = (label_infos[2], label_infos[1], label_infos[3])
     
     markers = np.zeros(image_shape, dtype=np.int)
 
     for line in lines[1:]:
         split_line = line.split(" ")
-        y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
-
-        markers[x][y] = label
+        if is_2d:
+            y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
+            markers[x][y] = label
+        else:
+            x, y, z, label = int(split_line[0]), int(split_line[1]), int(split_line[3]), int(split_line[4])
+            markers[x][y][z] = label
 
     return markers
 

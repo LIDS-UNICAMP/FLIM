@@ -30,14 +30,14 @@ setuptools.setup(
     install_requires=[
         "torch",
         "torchvision",
-        "numpy",
+        "numpy>=1.20",
         "scikit-image",
         "sklearn",
         "setuptools",
         "numba",
         "termcolor"
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.8',
     entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
                                       'validate=flim.tools.validating_tool:main',
                                       "annotation=flim.tools.annotation_tool:main"

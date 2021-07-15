@@ -13,5 +13,6 @@ flake8
 pylama
 termcolor 
 numba
+nibabel
 napari[pyside2]
 magicgui
