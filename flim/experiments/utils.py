@@ -40,7 +40,7 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm, LIDSConvNet
+from ..models.lcn import LCNCreator, MarkerBasedNorm2d, LIDSConvNet
 from ._dataset import LIDSDataset
 
 from PIL import Image
@@ -163,24 +163,30 @@ def _convert_arch_from_lids_format(arch):
         layer_name = f"layer{i}"
         layer_params = arch[layer_name]
 
+        kernel_size = layer_params['conv']['kernel_size']
+
+        is3d = kernel_size[2] > 0
+
+        end = 3 if is3d else 2
+        dilation_rate = layer_params['conv']['dilation_rate'][:end]
+        kernel_size = kernel_size[:end]
+
         m_norm_layer = {
-            "operation": "marker_based_norm",
+            "operation": "m_norm3d" if is3d else "m_norm2d",
             "params": {
-                "kernel_size": layer_params['conv']['kernel_size'][:2],
-                "dilation": layer_params['conv']['dilation_rate'][:2],
+                "kernel_size": kernel_size,
+                "dilation": dilation_rate,
                 "default_std": stdev_factor
             }
         }
 
-        kernel_size = layer_params['conv']['kernel_size'][:2]
-
         conv_layer = {
-            "operation": "conv2d",
+            "operation": "conv3d" if is3d else "conv2d",
             "params": {
                 "kernel_size": kernel_size,
-                "dilation": layer_params['conv']['dilation_rate'][:2],
+                "dilation": dilation_rate,
                 "number_of_kernels_per_marker": layer_params['conv']['nkernels_per_image'],
-                "padding": [kernel_size[0] // 2, kernel_size[1] // 2],
+                "padding": [k_size // 2 for k_size in kernel_size],
                 "out_channels": layer_params['conv']['noutput_channels'],
                 "stride": 1
             }
@@ -197,25 +203,33 @@ def _convert_arch_from_lids_format(arch):
             }
 
         pool_type_mapping = {
-            "max_pool": "max_pool2d",
-            "avg_pool": "avg_pool2d",
+            "max_pool2d": "max_pool2d",
+            "avg_pool2d": "avg_pool2d",
+            "max_pool3d": "max_pool3d",
+            "avg_pool3d": "avg_pool3d",
             "no_pool": None
         }
 
         pool_type = layer_params['pooling']['type']
+
+        if is3d:
+            pool_type += "3d"
+
+        else:
+            pool_type += "2d"
 
         assert pool_type in pool_type_mapping, f"{pool_type} is not a supported pooling operation"
 
         if pool_type == "no_pool":
             pool_layer = None
         else:
-            pool_kernel_size = layer_params['pooling']['size'][:2]
+            pool_kernel_size = layer_params['pooling']['size'][:end]
             pool_layer = {
                 "operation": pool_type_mapping[pool_type],
                 "params": {
                     "kernel_size": pool_kernel_size,
                     "stride": layer_params['pooling']['stride'],
-                    "padding": [pool_kernel_size[0] // 2, pool_kernel_size[1] // 2]
+                    "padding": [k_size // 2 for k_size in pool_kernel_size]
                 }
             }
 
@@ -503,7 +517,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
 
     for name, layer in model.feature_extractor.named_children():
         print(name)
-        if isinstance(layer, MarkerBasedNorm):
+        if isinstance(layer, MarkerBasedNorm2d):
             conv_name = name.replace('m-norm', 'conv')
             with open(os.path.join(lids_model_dir,
                                             f"{conv_name}-mean.txt")) as f:

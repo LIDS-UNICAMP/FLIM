@@ -1,6 +1,7 @@
 # noqa: D100
 
 import math
+import warnings
 
 import torch
 import torch.nn as nn
@@ -17,7 +18,7 @@ import numpy as np
 from torch.nn.modules import module, padding
 
 from ._special_linear_layer import SpecialLinearLayer
-from ._marker_based_norm import MarkerBasedNorm
+from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
 from ._decoder import Decoder
 
@@ -27,14 +28,20 @@ __all__ = ['LCNCreator']
 
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
+    "max_pool3d": nn.MaxPool3d,
     "avg_pool2d": nn.AvgPool2d,
+    "avg_pool3d": nn.AvgPool3d,
     "conv2d": nn.Conv2d,
+    "conv3d": nn.Conv3d,
     "relu": nn.ReLU,
     "linear": SpecialLinearLayer,
-    'marker_based_norm': MarkerBasedNorm,
+    'marker_based_norm': MarkerBasedNorm2d,
+    'm_norm2d': MarkerBasedNorm2d,
+    'm_norm3d': MarkerBasedNorm3d,
     "batch_norm2d": nn.BatchNorm2d,
+    "batch_norm3d": nn.BatchNorm3d,
     "dropout": nn.Dropout,
-    "adap_avg_pool2d": nn.AdaptiveAvgPool2d,
+    "adap_avg_pool3d": nn.AdaptiveAvgPool3d,
     "unfold": nn.Unfold,
     "fold": nn.Fold,
     "decoder": Decoder
@@ -171,7 +178,9 @@ class LCNCreator:
             
             if self._relabel_markers and markers is not None:
                 start_label = 2 if self._has_superpixel_markers else 1
-                markers = label_connected_components(markers, start_label)
+                markers = label_connected_components(markers,
+                                                     start_label,
+                                                     is_3d=markers.ndim == 4)
 
             if self._has_superpixel_markers:
                 markers += self._superpixel_markers
@@ -312,7 +321,9 @@ class LCNCreator:
                 operation = __operations__[layer_config['operation']]
                 operation_params = layer_config['params']
                 
-                if layer_config['operation'] == "conv2d":
+                if layer_config['operation'] == "conv2d" or layer_config['operation'] == 'conv3d':
+
+                    is_3d = layer_config['operation'] == "conv3d"
 
                     number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", None)
                     use_random_kernels = operation_params.get("use_random_kernels", False)
@@ -334,13 +345,14 @@ class LCNCreator:
                     
                     in_channels = last_conv_layer_out_channels
                     if isinstance(dilation, int):
-                        dilation = [dilation, dilation]
+                        dilation = [dilation] * (3 if is_3d else 2)
 
                     if isinstance(padding, int):
-                        padding = [padding, padding]
+                        padding = [padding] * (3 if is_3d else 2)
+        
 
                     if isinstance(kernel_size, int):
-                        kernel_size = [kernel_size, kernel_size]
+                        kernel_size = [kernel_size] * (3 if is_3d else 2)
 
                     if markers is not None and "number_of_kernels_per_marker" not in operation_params:
                         number_of_kernels_per_marker = math.ceil(operation_params["out_channels"]/np.array(markers).max())
@@ -354,7 +366,7 @@ class LCNCreator:
                     assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
                         f"The number of kernels per marker is not enough to generate {out_channels} kernels."
                     
-                    weights = _initialize_conv2d_weights(images,
+                    weights = _initialize_convNd_weights(images,
                                                          markers,
                                                          in_channels,
                                                          out_channels=out_channels,
@@ -370,7 +382,7 @@ class LCNCreator:
                     if out_channels is None:
                         out_channels = weights.shape[0]
                     
-                    layer = nn.Conv2d(in_channels,
+                    layer = operation(in_channels,
                                       out_channels,
                                       kernel_size,
                                       stride,
@@ -387,7 +399,13 @@ class LCNCreator:
                         
                     last_conv_layer_out_channels = layer.out_channels
 
-                elif layer_config['operation'] == 'marker_based_norm':
+                elif layer_config['operation'] in ['marker_based_norm', 'm_norm2d', 'm_norm3d']:
+                    if layer_config['operation'] == 'marker_based_norm':
+                        warnings.warn("'marker_based_norm' operation name has been renamed to 'm_norm2d'",
+                                      DeprecationWarning,
+                                      stacklevel=2)
+
+                    is_3d = '3d' in layer_config['operation']
 
                     if images is None or markers is None:
                         mean = None
@@ -398,10 +416,10 @@ class LCNCreator:
                         in_channels = last_conv_layer_out_channels
 
                         if isinstance(dilation, int):
-                            dilation = [dilation, dilation]
+                            dilation = [dilation] * (3 if is_3d else 2)
 
                         if isinstance(kernel_size, int):
-                            kernel_size = [kernel_size, kernel_size]
+                            kernel_size = [kernel_size] * (3 if is_3d else 2)
 
                         patches, _ = _generate_patches(images,
                                                        markers,
@@ -409,24 +427,34 @@ class LCNCreator:
                                                        kernel_size,
                                                        dilation)
 
-        
-                        mean = torch.from_numpy(patches.mean(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
-                        std = torch.from_numpy(patches.std(axis=(0, 1, 2), keepdims=True)).view(1, -1, 1, 1).float()
-                    
-                    layer = MarkerBasedNorm(mean=mean,
-                                            std=std,
-                                            in_channels=last_conv_layer_out_channels,
-                                            default_std=self._default_std)
+                        if is_3d:
+                            axis = (0, 1, 2, 3)
+                            view = (1, -1, 1, 1, 1)
+                        else:
+                            axis = (0, 1, 2)
+                            view = (1, -1, 1, 1)
 
-                elif layer_config['operation'] == "batch_norm2d":
+                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).view(view).float()
+                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).view(view).float()
+                    
+                    layer = operation(mean=mean,
+                                      std=std,
+                                      in_channels=in_channels,
+                                      default_std=self._default_std)
+
+                elif layer_config['operation'] == "batch_norm2d" or layer_config['operation'] == "batch_norm3d":
                     layer = operation(
                         num_features=last_conv_layer_out_channels)
                     layer.train()
                     layer = layer.to(device)
+                    is_3d = "3d" in layer_config['operation']
                     if images is not None and markers is not None:    
                         torch_images = torch.Tensor(images)
 
-                        torch_images = torch_images.permute(0, 3, 1, 2)
+                        if is_3d:
+                            torch_images = torch_images.permute(0, 4, 3, 1, 2)
+                        else:
+                            torch_images = torch_images.permute(0, 3, 1, 2)
                         
                         input_size = torch_images.size(0)
                         
@@ -436,33 +464,39 @@ class LCNCreator:
                         
                     layer.eval()
                     
-                elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d":
+                elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d" \
+                    or layer_config['operation'] == "max_pool3d" or layer_config['operation'] == "avg_pool3d":
+
+                    is_3d = "3d" in layer_config['operation']
+
                     stride = operation_params['stride']
                     kernel_size = operation_params['kernel_size']
                     
                     if 'padding' in operation_params:
                         padding = operation_params['padding']
                         if isinstance(padding, int):
-                            padding = [padding, padding]
+                            padding = [padding] * (3 if is_3d else 2)
                     else:
-                        padding = [0, 0]
+                        padding = [0] * (3 if is_3d else 2)
                     
                     if isinstance(kernel_size, int):
-                        kernel_size = [kernel_size, kernel_size]
+                        kernel_size = [kernel_size] * (3 if is_3d else 2)
 
-                    if len(output_shape) > 1:
-                        output_shape[0] = math.floor((output_shape[0] + 2*padding[0] - kernel_size[0])/stride + 1)
-                        output_shape[1] = math.floor((output_shape[1] + 2*padding[1] - kernel_size[1])/stride + 1)
-                    
+                    if output_shape.shape[0] > 1:
+                        output_shape[:3] = np.floor((output_shape[:3] + 2*np.array(padding) - np.array(kernel_size))/stride + 1)
+                       
                     operation_params['stride'] = 1
-                    operation_params['padding'] = [kernel_size[0]//2, kernel_size[1]//2]
+                    operation_params['padding'] = [k_size//2 for k_size in kernel_size]
                     
                     _layer = operation(**operation_params)
 
                     if images is not None and markers is not None:    
                         torch_images = torch.Tensor(images)
 
-                        torch_images = torch_images.permute(0, 3, 1, 2)
+                        if is_3d:
+                            torch_images = torch_images.permute(0, 4, 3, 1, 2)
+                        else:
+                            torch_images = torch_images.permute(0, 3, 1, 2)
                         
                         input_shape = torch_images.shape
                         input_size = input_shape[0]
@@ -475,8 +509,11 @@ class LCNCreator:
                             output = _layer.forward(batch.to(device))
                             output = output.detach().cpu()
                             outputs = torch.cat((outputs, output))
-                            
-                        images = outputs.permute(0, 2, 3, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3]]
+
+                        if is_3d:
+                            images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3], :input_shape[3]]
+                        else: 
+                            images = outputs.permute(0, 2, 3, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3]]
                     
                     #if markers is not None:
                     #    markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
@@ -485,19 +522,25 @@ class LCNCreator:
                     operation_params['padding'] = padding
                     layer = operation(**operation_params)
                     
-                elif layer_config['operation'] == "adap_avg_pool2d":
+                elif layer_config['operation'] == "adap_avg_pool2d" or layer_config['operation'] == "adap_avg_pool3d":
                     if len(output_shape) > 1:
-                        output_shape[0] = operation_params['output_size'][0]
-                        output_shape[1] = operation_params['output_size'][1]
+                        output_shape = np.array(operation_params['output_size'])
                     
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "unfold":
+                    # TODO check if it works with 3D images
                     layer = operation(**operation_params)
 
                     torch_image = torch.from_numpy(images[0])
                     torch_image = torch_image.unsqueeze(0)
-                    torch_image = torch_image.permute(0, 3, 1, 2).to(device)
+                    
+                    if is_3d:
+                        torch_images = torch_images.permute(0, 4, 3, 1, 2)
+                    else:
+                        torch_images = torch_images.permute(0, 3, 1, 2)
+                    torch_image = torch_image.to(device)
+
                     layer.train()
                     layer.to(device)
 
@@ -510,6 +553,8 @@ class LCNCreator:
                     last_conv_layer_out_channels = output.shape[1]
 
                 elif layer_config['operation'] == 'decoder':
+                    if images.ndim > 4:
+                        raise NotImplementedError("FLIM decoder does not currently support 3D images.")
                     layer = operation(images, self._markers, device=device, **operation_params)
                     layer.to(device)
 
@@ -518,8 +563,11 @@ class LCNCreator:
                     
                 if images is not None and markers is not None:    
                     torch_images = torch.Tensor(images)
-
-                    torch_images = torch_images.permute(0, 3, 1, 2)
+                    is_3d = torch_images.ndim == 5
+                    if is_3d:
+                        torch_images = torch_images.permute(0, 4, 3, 1, 2)
+                    else:
+                        torch_images = torch_images.permute(0, 3, 1, 2)
                     
                     input_size = torch_images.size(0)
                     
@@ -532,8 +580,10 @@ class LCNCreator:
                             output = layer.forward(batch.to(device))
                             output = output.detach().cpu()
                             outputs = torch.cat((outputs, output))
-                            
-                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
+                        if is_3d:
+                            images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()
+                        else:
+                            images = outputs.permute(0, 2, 3, 1).detach().numpy()
                         # output_shape = list(images.shape)
 
                         if new_module_name in self._to_save_outputs:
@@ -546,8 +596,7 @@ class LCNCreator:
 
         if self._remove_border > 0:
             if len(output_shape) > 1:
-                output_shape[0] -= 2*self._remove_border
-                output_shape[1] -= 2*self._remove_border
+                output_shape -= 2*self._remove_border
 
         self._output_shape = output_shape
         
@@ -887,18 +936,31 @@ def _generate_patches(images,
 
             dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
             dilated_padding = dilated_kernel_size // 2
-            image_pad = np.pad(image, ((dilated_padding[0], dilated_padding[0]),
-                                    (dilated_padding[1], dilated_padding[1]), (0, 0)),
+
+            is_2d = kernel_size.ndim == 3
+
+            if is_2d:
+                padding = ((dilated_padding[0], dilated_padding[0]),
+                           (dilated_padding[1], dilated_padding[1]),
+                           (0, 0))
+                patches_shape = (dilated_kernel_size[0], dilated_kernel_size[1], in_channels)
+            else:
+                padding = ((dilated_padding[0], dilated_padding[0]),
+                           (dilated_padding[1], dilated_padding[1]),
+                           (dilated_padding[2], dilated_padding[2]),
+                           (0, 0))
+                patches_shape = (dilated_kernel_size[0],
+                                 dilated_kernel_size[1],
+                                 dilated_kernel_size[2],
+                                 in_channels)
+
+            image_pad = np.pad(image, padding,
                             mode='constant', constant_values=0)
 
+
             patches = view_as_windows(image_pad,
-                                      (dilated_kernel_size[0], dilated_kernel_size[1], in_channels),
+                                      patches_shape,
                                       step=1)
-                                      
-            if dilation[0] > 1 or dilation[1] > 0:
-                r = np.arange(0, dilated_kernel_size[0], dilation[0])
-                s = np.arange(0, dilated_kernel_size[1], dilation[1])
-                patches = patches[:, :, :, r, : , :][:, :, :, :, s , :]
 
             shape = patches.shape
             image_shape = image.shape
@@ -906,26 +968,50 @@ def _generate_patches(images,
             indices = np.where(image_markers != 0)
             markers_x = indices[0]
             markers_y = indices[1]
+            if not is_2d:
+                markers_z = indices[1]
             labels = image_markers[indices] - 1
             
             mask = np.logical_and(
                 markers_x < image_shape[0], markers_y < image_shape[1])
 
+            if not is_2d:
+                mask = np.logical_and(mask, markers_z < image_shape[2])
+                markers_z = markers_z[mask]
+
             markers_x = markers_x[mask]
             markers_y = markers_y[mask]
+
             labels = labels[mask]
 
-            generated_patches = \
-                patches[markers_x, markers_y].reshape(-1, *shape[3:])
+            if is_2d:
+                generated_patches = \
+                    patches[markers_x, markers_y].reshape(-1, *shape[3:])
+            else:
+                generated_patches = \
+                    patches[markers_x, markers_y, markers_z].reshape(-1, *shape[4:])
             
+
+            if is_2d:                          
+                if dilation[0] > 1 or dilation[1] > 1:
+                    r = np.arange(0, dilated_kernel_size[0], dilation[0])
+                    s = np.arange(0, dilated_kernel_size[1], dilation[1])
+                    generated_patches = generated_patches[:, r, : , :][:, :, s , :]
+            else:
+                if dilation[0] > 1 or dilation[1] > 1 or dilation[2] > 1:
+                    r = np.arange(0, dilated_kernel_size[0], dilation[0])
+                    s = np.arange(0, dilated_kernel_size[1], dilation[1])
+                    t = np.arange(0, dilated_kernel_size[2], dilation[2])
+                    generated_patches = generated_patches[:, r, : , :, :][:, :, s , :, :][:, :, : , t, :]
+
             if all_patches is None:
                 all_patches = generated_patches
                 all_labels = labels
             else:
                 all_patches = np.concatenate((all_patches, generated_patches))
                 all_labels = np.concatenate((all_labels, labels))
-        
-        return all_patches, all_labels
+
+        return all_patches.squeeze(), all_labels
 
 def _kmeans_roots(patches,
                   labels,
@@ -978,7 +1064,7 @@ def _kmeans_roots(patches,
     return roots
 
 
-def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilation, number_of_kernels_per_marker, default_std):
+def _calculate_convNd_weights(images, markers, in_channels, kernel_size, dilation, number_of_kernels_per_marker, default_std):
         """Calculate kernels weights from image markers.
 
         Parameters
@@ -1005,8 +1091,10 @@ def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilatio
                                             in_channels,
                                             kernel_size,
                                             dilation)
-        mean_by_channel = patches.mean(axis=(0, 1, 2), keepdims=True)
-        std_by_channel = patches.std(axis=(0, 1, 2), keepdims=True)
+
+        axis = tuple(range(len(kernel_size)))
+        mean_by_channel = patches.mean(axis=axis, keepdims=True)
+        std_by_channel = patches.std(axis=axis, keepdims=True)
             
         patches = (patches - mean_by_channel)/(std_by_channel + default_std)
 
@@ -1024,12 +1112,12 @@ def _calculate_conv2d_weights(images, markers, in_channels, kernel_size, dilatio
         return kernel_weights
 
 
-def _initialize_conv2d_weights(images=None,
+def _initialize_convNd_weights(images=None,
                                markers=None,
                                in_channels=3,
                                out_channels=None,
                                kernel_size=None,
-                               dilation=[1, 1],
+                               dilation=None,
                                number_of_kernels_per_marker=16,
                                use_random_kernels=False,
                                default_std=0.1):
@@ -1059,14 +1147,17 @@ def _initialize_conv2d_weights(images=None,
                                                          kernel_size=kernel_size)
             
         elif images is not None and markers is not None:
-            kernels_weights = _calculate_conv2d_weights(images,
+            kernels_weights = _calculate_convNd_weights(images,
                                                         markers,
                                                         in_channels,
                                                         kernel_size,
                                                         dilation,
                                                         number_of_kernels_per_marker,
                                                         default_std=default_std)
-            kernels_weights = np.rollaxis(kernels_weights, 3, 1)
+            if kernels_weights.ndim == 4:
+                kernels_weights = kernels_weights.transpose(0, 3, 1, 2)
+            else:
+                kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
 
             assert out_channels is None or kernels_weights.shape[0] >= out_channels,\
                 "Not enough kernels were generated!!!"
@@ -1080,8 +1171,7 @@ def _initialize_conv2d_weights(images=None,
         else:
             kernels_weights = torch.rand(out_channels,
                                          in_channels,
-                                         kernel_size[0],
-                                         kernel_size[1]).numpy()
+                                         *kernel_size).numpy()
 
         return kernels_weights
 

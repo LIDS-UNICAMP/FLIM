@@ -12,7 +12,7 @@ import torch
 __all__ = ['label_connected_components', 'compute_importance']
 
 
-def label_connected_components(label_images, start_label=1):
+def label_connected_components(label_images, start_label=1, is_3d=False):
     """Label connected components in a label image.
 
     Create new label images where labels are changed so that each \
@@ -38,6 +38,9 @@ def label_connected_components(label_images, start_label=1):
     if label_images.ndim == 2:
         label_images = np.expand_dims(label_images, 0)
 
+    if is_3d and label_images.ndim == 3:
+        label_images = np.expand_dims(label_images, 0)
+
     new_label_images = np.zeros_like(label_images).astype(np.int)
 
     _c = start_label
@@ -46,7 +49,10 @@ def label_connected_components(label_images, start_label=1):
         num_labels = label_image.astype(np.int32).max()
 
         #new_label_image = np.zeros_like(label_image).astype(np.int)
-        structure = np.ones((3, 3), dtype=np.uint8)
+        if is_3d:
+            structure = np.ones((3, 3, 3), dtype=np.uint8)
+        else:
+            structure = np.ones((3, 3, 3), dtype=np.uint8)
 
         for _l in range(1, num_labels + 1):
             _label_image = label(label_image == _l, structure=structure)[0]
