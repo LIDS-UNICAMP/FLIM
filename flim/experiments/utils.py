@@ -212,10 +212,10 @@ def _convert_arch_from_lids_format(arch):
 
         pool_type = layer_params['pooling']['type']
 
-        if is3d:
+        if is3d and pool_type != "no_pool":
             pool_type += "3d"
 
-        else:
+        elif pool_type != "no_pool":
             pool_type += "2d"
 
         assert pool_type in pool_type_mapping, f"{pool_type} is not a supported pooling operation"

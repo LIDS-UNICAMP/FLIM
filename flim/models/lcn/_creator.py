@@ -439,7 +439,7 @@ class LCNCreator:
                     
                     layer = operation(mean=mean,
                                       std=std,
-                                      in_channels=in_channels,
+                                      in_channels=last_conv_layer_out_channels,
                                       default_std=self._default_std)
 
                 elif layer_config['operation'] == "batch_norm2d" or layer_config['operation'] == "batch_norm3d":
