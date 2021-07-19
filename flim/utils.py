@@ -52,7 +52,7 @@ def label_connected_components(label_images, start_label=1, is_3d=False):
         if is_3d:
             structure = np.ones((3, 3, 3), dtype=np.uint8)
         else:
-            structure = np.ones((3, 3, 3), dtype=np.uint8)
+            structure = np.ones((3, 3), dtype=np.uint8)
 
         for _l in range(1, num_labels + 1):
             _label_image = label(label_image == _l, structure=structure)[0]

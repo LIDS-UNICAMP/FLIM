@@ -483,7 +483,8 @@ class LCNCreator:
                         kernel_size = [kernel_size] * (3 if is_3d else 2)
 
                     if output_shape.shape[0] > 1:
-                        output_shape[:3] = np.floor((output_shape[:3] + 2*np.array(padding) - np.array(kernel_size))/stride + 1)
+                        end = 3 if is_3d else 2
+                        output_shape[:end] = np.floor((output_shape[:end] + 2*np.array(padding) - np.array(kernel_size))/stride + 1)
                        
                     operation_params['stride'] = 1
                     operation_params['padding'] = [k_size//2 for k_size in kernel_size]
@@ -926,33 +927,33 @@ def _generate_patches(images,
             an array with the label of each patch.
         
         """
+        kernel_size = np.array(kernel_size)
+        dilation = np.array(dilation)
+
+        dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
+        dilated_padding = dilated_kernel_size // 2
+
+        is_2d = kernel_size.shape[0] == 2
+
+        if is_2d:
+            padding = ((dilated_padding[0], dilated_padding[0]),
+                        (dilated_padding[1], dilated_padding[1]),
+                        (0, 0))
+            patches_shape = (dilated_kernel_size[0], dilated_kernel_size[1], in_channels)
+        else:
+            padding = ((dilated_padding[0], dilated_padding[0]),
+                        (dilated_padding[1], dilated_padding[1]),
+                        (dilated_padding[2], dilated_padding[2]),
+                        (0, 0))
+            patches_shape = (dilated_kernel_size[0],
+                                dilated_kernel_size[1],
+                                dilated_kernel_size[2],
+                                in_channels)
+
         all_patches, all_labels = None, None
         for image, image_markers in zip(images, markers):
             if len(image_markers) == 0:
                 continue
-
-            kernel_size = np.array(kernel_size)
-            dilation = np.array(dilation)
-
-            dilated_kernel_size = kernel_size + (dilation - 1) * (kernel_size-1)
-            dilated_padding = dilated_kernel_size // 2
-
-            is_2d = kernel_size.ndim == 3
-
-            if is_2d:
-                padding = ((dilated_padding[0], dilated_padding[0]),
-                           (dilated_padding[1], dilated_padding[1]),
-                           (0, 0))
-                patches_shape = (dilated_kernel_size[0], dilated_kernel_size[1], in_channels)
-            else:
-                padding = ((dilated_padding[0], dilated_padding[0]),
-                           (dilated_padding[1], dilated_padding[1]),
-                           (dilated_padding[2], dilated_padding[2]),
-                           (0, 0))
-                patches_shape = (dilated_kernel_size[0],
-                                 dilated_kernel_size[1],
-                                 dilated_kernel_size[2],
-                                 in_channels)
 
             image_pad = np.pad(image, padding,
                             mode='constant', constant_values=0)

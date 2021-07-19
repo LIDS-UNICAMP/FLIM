@@ -1,4 +1,4 @@
-numpy
+numpy>=1.20
 torch
 torchvision
 setuptools
@@ -16,3 +16,4 @@ numba
 nibabel
 napari[pyside2]
 magicgui
+nibabel
