@@ -17,7 +17,6 @@ from scipy.spatial import distance
 import numpy as np
 from torch.nn.modules import module, padding
 
-from ._special_linear_layer import SpecialLinearLayer
 from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
 from ._decoder import Decoder
