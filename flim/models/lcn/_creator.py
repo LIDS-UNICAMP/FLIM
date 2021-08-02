@@ -34,7 +34,7 @@ __operations__ = {
     "conv2d": nn.Conv2d,
     "conv3d": nn.Conv3d,
     "relu": nn.ReLU,
-    "linear": SpecialLinearLayer,
+    "linear": nn.Linear,
     'marker_based_norm': MarkerBasedNorm2d,
     'm_norm2d': MarkerBasedNorm2d,
     'm_norm3d': MarkerBasedNorm3d,
@@ -340,7 +340,7 @@ class LCNCreator:
                 
                     out_channels = operation_params.get('out_channels', None)
 
-                    assert out_channels or markers,\
+                    assert out_channels is not None or markers is not None,\
                         "`out_channels` or `markers` must be defined."
                     
                     in_channels = last_conv_layer_out_channels
@@ -363,8 +363,9 @@ class LCNCreator:
                     if (images is None or markers is None) and state_dict is not None:
                         out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
 
-                    assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
-                        f"The number of kernels per marker is not enough to generate {out_channels} kernels."
+                    if out_channels is not None:
+                        assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
+                            f"The number of kernels per marker is not enough to generate {out_channels} kernels."
                     
                     weights = _initialize_convNd_weights(images,
                                                          markers,
@@ -375,9 +376,9 @@ class LCNCreator:
                                                          number_of_kernels_per_marker=number_of_kernels_per_marker,
                                                          use_random_kernels=use_random_kernels,
                                                          default_std=default_std)
-
-                    assert weights.shape[0] == out_channels, \
-                        f"Weights with {weights.shape} is not correct."
+                    if out_channels is not None:
+                        assert weights.shape[0] == out_channels, \
+                            f"Weights with {weights.shape} is not correct."
                                                          
                     if out_channels is None:
                         out_channels = weights.shape[0]
@@ -657,40 +658,16 @@ class LCNCreator:
                     operation_params['in_features'] = weights.shape[1]
                     operation_params['out_features'] = weights.shape[0]
 
-                layer = operation(**operation_params)
-
-                if use_backpropagation:
-                    layer.initialize_weights()
-                else:
-                    layer.initialize_weights(features, all_labels)
-            else:
-                layer = operation(**operation_params)
-
-            if features is not None and not use_backpropagation:
-                torch_features = torch.Tensor(features)
-                
-                input_size = torch_features.size(0)
-                
-                outputs = torch.Tensor([])
-                _module = layer.to(self.device)
-                
-                for i in range(0, input_size, self._batch_size):
-                    batch = torch_features[i: i+self._batch_size]
-                    output = _module.forward(batch.to(self.device))
-                    output = output.detach().cpu()
-                    outputs = torch.cat((outputs, output))
-                
-                features = outputs.numpy()
-
+            layer = operation(**operation_params)
+            
             classifier.add_module(key, layer)
 
         #initialization
-        if features is None or use_backpropagation:
-            for m in classifier.modules():
-                if isinstance(m, SpecialLinearLayer):
-                    m._linear.weight.data.normal_(0, 0.01)
-                    if m._linear.bias is not None:
-                        nn.init.constant_(m._linear.bias, 0)   
+        for m in classifier.modules():
+            if isinstance(m, SpecialLinearLayer):
+                m._linear.weight.data.normal_(0, 0.01)
+                if m._linear.bias is not None:
+                    nn.init.constant_(m._linear.bias, 0)   
         torch.cuda.empty_cache()
 
     def remove_filters(self, layer_index, filter_indices):
@@ -957,8 +934,7 @@ def _generate_patches(images,
 
             image_pad = np.pad(image, padding,
                             mode='constant', constant_values=0)
-
-
+            # TODO check if patches_shape is valid
             patches = view_as_windows(image_pad,
                                       patches_shape,
                                       step=1)
