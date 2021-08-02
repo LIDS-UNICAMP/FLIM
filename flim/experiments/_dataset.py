@@ -55,8 +55,8 @@ class LIDSDataset(Dataset):
             elif image.shape[2] == 4:
                 image = rgba2rgb(image)
             
-            image = rgb2lab(image)
-            image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
+            #image = rgb2lab(image)
+            #image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
 
             image = image.astype(np.float32)
 
@@ -134,16 +134,18 @@ class ToTensor(object):
     def __call__(self, sample):
         image = np.array(sample)
 
+        min = image.min()
+        max = image.max()
+        image = (image - min)/(max - min)
+
         if image.ndim > 2:
             image = image.transpose((2, 0, 1))
         
-        return torch.from_numpy(image.copy()).float()
+        return torch.from_numpy(image.copy())
 
 class ToLAB(object):
     def __call__(self, sample):
         image = np.array(sample)
 
-        image = rgb2lab(image)
-        image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3) 
-
-        return Image.fromarray(image.astype(np.uint8))       
+        image = rgb2lab(image) 
+        return torch.from_numpy(image)     

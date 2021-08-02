@@ -1,9 +1,11 @@
 # noqa: D100
 
 import logging
+import warnings
 import torch
 
 import torch.nn as nn
+from torch.nn.modules.fold import Unfold
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
 
@@ -23,46 +25,18 @@ class LIDSConvNet(nn.Sequential):
 
     """
 
-    def __init__(self, remove_boder=0, skips=None, outputs_to_save=None):
+    def __init__(self, remove_boder=None, skips=None, outputs_to_save=None):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
-        self.feature_extractor = nn.Sequential()
-        # self.features = self.feature_extractor
-        self.classifier = nn.Sequential()
-        self._remove_border = remove_boder
+        self._logger = logging.getLogger()
+        
+        if remove_boder:
+            warnings.warn("remove_border is deprecated and it will be removed.",
+                DeprecationWarning,
+                stacklevel=1)
 
         self._skips = skips
         self._outputs_to_save = outputs_to_save
-
-        self._logger = logging.getLogger()
-
-    
-    def extract_features(self, x):
-        outputs = dict()
-        if 'input' in self._outputs_to_save:
-            outputs['input'] = x
-
-        for layer_name, layer in self.feature_extractor.named_modules():
-
-            if layer_name in self._skips:
-                concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
-                x = concat
-
-            if isinstance(layer, (nn.Sequential, ParallelModule)):
-                continue
-            
-            y = layer(x)
-
-            if layer_name in self._outputs_to_save:
-                outputs[layer_name] = y
-
-            x = y
-
-            b = self._remove_border
-            
-        if b > 0:
-            x = x[:,:, b:-b, b:-b]
-        return x
 
     def forward(self, x):
         """Apply the network to an input tensor.
@@ -84,56 +58,35 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
-        x = self.extract_features(x)
+        outputs = dict()
+        if 'input' in self._outputs_to_save:
+            outputs['input'] = x
 
-        if len(self.classifier) > 0:
+        for layer_name, layer in self.named_modules():
 
-            if x.ndim > 3:
-                x = x.flatten(1)
-            elif x.ndim == 3:
+            if layer_name in self._skips:
+                concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
+                x = concat
+
+            if isinstance(layer, (nn.Sequential, ParallelModule)):
+                continue
+
+            if isinstance(layer, nn.Fold):
                 x = x.permute(0, 2, 1)
-                # x = x.reshape(-1, x.shape[-1])
-            
-            for layer_name, layer in self.classifier.named_children():
-                if isinstance(layer, nn.Fold):
-                    x = x.permute(0, 2, 1)
-                _y = layer.forward(x)
-                x = _y
 
+            y = layer(x)
+
+            if isinstance(layer, nn.Unfold):
+                y = y.permute(0, 2, 1)
+
+            if layer_name in self._outputs_to_save:
+                outputs[layer_name] = y
+
+            x = y
+    
         y = x
 
         return y
-
-    def to(self, device):
-        """Move layer to ``device``.
-
-        Move layer parameters to some specified device.
-
-        Parameters
-        ----------
-        device : torch.device
-            The device where to move.
-
-        Returns
-        -------
-        Self
-            The layer itself.
-
-
-        Notes
-        -----
-        This method modifies the module in-place.
-
-        """
-
-        
-        for _, layer in self.feature_extractor.named_children():
-            layer.to(device)
-        
-        for _, layer in self.classifier.named_children():
-            layer.to(device)
-
-        return self
 
 
 class ParallelModule(nn.ModuleList):

@@ -147,6 +147,54 @@ class LCNCreator:
         
         self.LCN = LIDSConvNet(skips=self._skips, outputs_to_save=self._to_save_outputs, remove_boder=remove_border)
 
+    def build_model(self, remove_similar_filters: bool=False, similarity_level: float=0.85):
+        """Build the model.
+
+        Parameters 
+        ----------
+        remove_similar_filters : bool, optional
+            Keep only one of a set of similar filters, by default False.
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+
+        """
+
+        architecture = self._architecture
+        images = self._images
+        markers = self._markers
+
+        for module_name, module_arch in architecture.items():
+
+            if "input" in self._to_save_outputs:
+                self._outputs['input'] = images
+            
+            if self._relabel_markers and markers is not None:
+                start_label = 2 if self._has_superpixel_markers else 1
+                markers = label_connected_components(markers,
+                                                        start_label,
+                                                        is_3d=markers.ndim == 4)
+
+            if self._has_superpixel_markers:
+                markers += self._superpixel_markers
+
+            module, _, _, _ = self._build_module(module_name,
+                                        module_arch,
+                                        images,
+                                        markers,
+                                        remove_similar_filters=remove_similar_filters,
+                                        similarity_level=similarity_level)
+
+            # self.last_conv_layer_out_channels = out_channels
+
+            self.LCN.add_module(module_name, module)
+
+        # TODO is it necessary to empty cuda memory?
+        torch.cuda.empty_cache()
+
+
+
     def build_feature_extractor(self,
                                 remove_similar_filters=False,
                                 similarity_level=0.85):
@@ -165,35 +213,40 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
 
         """
+        warnings.warn("This function is deprecated. "
+                      "Please use the 'build_model' method instead.",
+                      DeprecationWarning,
+                      stacklevel=2)
+
         self._output_shape = self._input_shape
 
-        if "features" in self._architecture:
-            architecture = self._architecture['features']
-            images = self._images
-            markers = self._markers
+        
+        architecture = self._architecture
+        images = self._images
+        markers = self._markers
 
-            if "input" in self._to_save_outputs:
-                self._outputs['input'] = images
-            
-            if self._relabel_markers and markers is not None:
-                start_label = 2 if self._has_superpixel_markers else 1
-                markers = label_connected_components(markers,
-                                                     start_label,
-                                                     is_3d=markers.ndim == 4)
+        if "input" in self._to_save_outputs:
+            self._outputs['input'] = images
+        
+        if self._relabel_markers and markers is not None:
+            start_label = 2 if self._has_superpixel_markers else 1
+            markers = label_connected_components(markers,
+                                                    start_label,
+                                                    is_3d=markers.ndim == 4)
 
-            if self._has_superpixel_markers:
-                markers += self._superpixel_markers
+        if self._has_superpixel_markers:
+            markers += self._superpixel_markers
 
-            module, out_channels, _, _ = self._build_module(None,
-                                        architecture,
-                                        images,
-                                        markers,
-                                        remove_similar_filters=remove_similar_filters,
-                                        similarity_level=similarity_level)
+        module, out_channels, _, _ = self._build_module(None,
+                                    architecture,
+                                    images,
+                                    markers,
+                                    remove_similar_filters=remove_similar_filters,
+                                    similarity_level=similarity_level)
 
-            self.last_conv_layer_out_channels = out_channels
+        self.last_conv_layer_out_channels = out_channels
 
-            self.LCN.feature_extractor = module
+        self.LCN.feature_extractor = module
 
         torch.cuda.empty_cache()
 
@@ -253,7 +306,8 @@ class LCNCreator:
 
         batch_size = self._batch_size
 
-        module_type = module_arch['type']
+        # assume that module is sequential
+        module_type = module_arch.get("type", "sequential")
 
         if module_type == 'parallel':
             module = ParallelModule()
@@ -559,8 +613,27 @@ class LCNCreator:
                     layer = operation(images, self._markers, device=device, **operation_params)
                     layer.to(device)
 
+                elif layer_config['operation'] == 'linear':
+                    if operation_params['in_features'] == -1:
+                        operation_params['in_features'] = np.prod(self._output_shape)
+                        _flatten_layer = nn.Flatten()
+                        module.add_module("flatten", _flatten_layer)
+
+                    if state_dict is not None:
+                        weights = state_dict[f'classifier.{key}._linear.weight']
+                        operation_params['in_features'] = weights.shape[1]
+                        operation_params['out_features'] = weights.shape[0]
+
+                    layer = operation(**operation_params)
+                    layer.to(device)
+                    #initialization
+                    layer.weight.data.normal_(0, 0.01)
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0)
+
                 else:
                     layer = operation(**operation_params)
+
                     
                 if images is not None and markers is not None:    
                     torch_images = torch.Tensor(images)
@@ -572,7 +645,7 @@ class LCNCreator:
                     
                     input_size = torch_images.size(0)
                     
-                    if layer_config['operation'] != "unfold" and not ('pool' in layer_config['operation']):
+                    if layer_config['operation'] != "unfold" and not ('pool' in layer_config['operation']) and not ('linear' in layer_config['operation']):
                         outputs = torch.Tensor([])
                         layer = layer.to(self.device)
                         
@@ -605,7 +678,10 @@ class LCNCreator:
     
     def build_classifier(self, train_set=None, state_dict=None):
         """Buid the classifier."""
-
+        warnings.warn("This function is deprecated and will be removed in a future release.\
+             Please use the build_model",
+            DeprecationWarning,
+            stacklevel=2)
         model = self.LCN
 
         if model is None:
@@ -619,27 +695,6 @@ class LCNCreator:
 
         assert "classifier" in architecture, \
             "Achitecture does not specify a classifier"
-            
-        features = None
-        all_labels = None
-        use_backpropagation = 'backpropagation' in architecture['classifier'] and architecture['classifier']['backpropagation']
-        
-        if train_set is not None and not use_backpropagation:
-            loader = DataLoader(train_set, self._batch_size, shuffle=False)
-            for inputs, labels in loader:
-                inputs = inputs.to(self.device)
-
-                outputs = model.feature_extractor(inputs).detach().cpu().flatten(1)
-
-                if features is None:
-                    features = outputs
-                    all_labels = labels
-                else:
-                    features = torch.cat((features, outputs))
-                    all_labels = torch.cat((all_labels, labels))
-        
-            features = features.numpy()
-            all_labels.numpy()
 
         cls_architecture = architecture['classifier']['layers']
 
@@ -663,10 +718,11 @@ class LCNCreator:
 
         #initialization
         for m in classifier.modules():
-            if isinstance(m, SpecialLinearLayer):
-                m._linear.weight.data.normal_(0, 0.01)
-                if m._linear.bias is not None:
-                    nn.init.constant_(m._linear.bias, 0)   
+            if isinstance(m, nn.Linear):
+                m.weight.data.normal_(0, 0.01)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
         torch.cuda.empty_cache()
 
     def remove_filters(self, layer_index, filter_indices):
@@ -802,11 +858,10 @@ def _find_skip_connections_in_module(module_name, module):
     return skips
 
 def _find_skip_connections(arch):
-    if "features" in arch:
-        arch = arch['features']
-
-    skips = _find_skip_connections_in_module(None, arch)
-
+    skips = dict()
+    for module_name, module_arch in arch.items():
+        sub_modules_skips = _find_skip_connections_in_module(module_name, module_arch)
+        skips.update(sub_modules_skips)
     return skips
 
 def _find_outputs_to_save(skips):

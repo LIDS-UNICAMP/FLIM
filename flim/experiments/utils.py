@@ -392,10 +392,10 @@ def train_model(model,
                 only_classifier=False,
                 wandb=None):
 
-    torch.manual_seed(42)
-    np.random.seed(42)
-    if device != 'cpu':
-        torch.backends.cudnn.deterministic = True
+    #torch.manual_seed(42)
+    #np.random.seed(42)
+    #if device != 'cpu':
+    #    torch.backends.cudnn.deterministic = True
     
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
     
