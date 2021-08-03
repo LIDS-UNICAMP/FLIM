@@ -16,4 +16,3 @@ numba
 nibabel
 napari[pyside2]
 magicgui
-nibabel

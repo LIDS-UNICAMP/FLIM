@@ -37,7 +37,7 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm2d, LIDSConvNet
+from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSConvNet
 from ._dataset import LIDSDataset
 
 from PIL import Image
@@ -511,7 +511,7 @@ def load_torchvision_model_weights(model, weigths_path):
 def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
 
-    for name, layer in model.feature_extractor.named_children():
+    for name, layer in model.features.named_children():
         print(name)
         if isinstance(layer, MarkerBasedNorm2d):
             conv_name = name.replace('m-norm', 'conv')
@@ -525,9 +525,8 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 lines = f.readlines()[0]
                 std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
 
-            
-            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
-            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
+            layer.mean_by_channel = torch.from_numpy(mean).float()
+            layer.std_by_channel = torch.from_numpy(std).float()
 
         if isinstance(layer, nn.Conv2d):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
@@ -545,29 +544,6 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 
                 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
-    
-    '''for name, layer in model.classifier.named_children():
-        print(name)
-        if isinstance(layer, SpecialLinearLayer):
-            if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
-                weights = np.load(os.path.join(lids_model_dir,
-                                            f"split{split}-{name}-weights.npy"))
-                weights = weights.transpose()
-                
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-mean.txt")) as f:
-                    lines = f.readlines()
-                    mean = np.array([float(line) for line in lines])
-                    
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-stdev.txt")) as f:
-                    lines = f.readlines()
-                    std = np.array([float(line) for line in lines])
-                    
-                layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
-                layer.std = torch.from_numpy(std.reshape(1, -1)).float()
-                
-                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())'''
     print("Finish loading...")     
     return model
 

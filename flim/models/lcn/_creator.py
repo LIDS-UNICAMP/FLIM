@@ -484,13 +484,11 @@ class LCNCreator:
 
                         if is_3d:
                             axis = (0, 1, 2, 3)
-                            view = (1, -1, 1, 1, 1)
                         else:
                             axis = (0, 1, 2)
-                            view = (1, -1, 1, 1)
 
-                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).view(view).float()
-                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).view(view).float()
+                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).flatten().float()
+                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).flatten().float()
                     
                     layer = operation(mean=mean,
                                       std=std,
