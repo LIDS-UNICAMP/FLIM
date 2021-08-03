@@ -35,7 +35,8 @@ setuptools.setup(
         "sklearn",
         "setuptools",
         "numba",
-        "termcolor"
+        "termcolor",
+        "nibabel"
     ],
     python_requires='>=3.8',
     entry_points={'console_scripts': ['train=flim.tools.training_tool:main',

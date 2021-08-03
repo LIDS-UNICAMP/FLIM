@@ -77,7 +77,7 @@ def load_image(path: str, lab: bool=True) -> npt.NDArray[np.float64]:
     max_v = image.max()
     min_v = image.min()
 
-    image = (image - min_v)/(max_v - min_v)
+    image = (image)/(max_v)
 
     return image
 

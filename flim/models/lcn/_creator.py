@@ -627,7 +627,8 @@ class LCNCreator:
                     layer = operation(**operation_params)
                     layer.to(device)
                     #initialization
-                    layer.weight.data.normal_(0, 0.01)
+                     
+                    nn.init.xavier_normal_(layer.weight.data, nn.init.calculate_gain('relu'))
                     if layer.bias is not None:
                         nn.init.constant_(layer.bias, 0)
 
@@ -675,75 +676,6 @@ class LCNCreator:
         self._output_shape = output_shape
         
         return module, last_conv_layer_out_channels, images, markers
-    
-    def build_classifier(self, train_set=None, state_dict=None):
-        """Buid the classifier."""
-        warnings.warn("This function is deprecated and will be removed in a future release.\
-             Please use the build_model",
-            DeprecationWarning,
-            stacklevel=2)
-        model = self.LCN
-
-        if model is None:
-            model = LIDSConvNet(self._remove_border, self._skips, self._to_save_outputs)
-            self.LCN = model
-
-        classifier = model.classifier
-        
-        architecture = self._architecture
-
-
-        assert "classifier" in architecture, \
-            "Achitecture does not specify a classifier"
-
-        cls_architecture = architecture['classifier']['layers']
-
-        for key in cls_architecture:
-            layer_config = cls_architecture[key]
-            
-            operation = __operations__[layer_config['operation']]
-            operation_params = layer_config['params']
-            
-            if layer_config['operation'] == 'linear':
-                if operation_params['in_features'] == -1:
-                    operation_params['in_features'] = np.prod(self._output_shape)
-                if train_set is None and state_dict is not None:
-                    weights = state_dict[f'classifier.{key}._linear.weight']
-                    operation_params['in_features'] = weights.shape[1]
-                    operation_params['out_features'] = weights.shape[0]
-
-            layer = operation(**operation_params)
-            
-            classifier.add_module(key, layer)
-
-        #initialization
-        for m in classifier.modules():
-            if isinstance(m, nn.Linear):
-                m.weight.data.normal_(0, 0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-        torch.cuda.empty_cache()
-
-    def remove_filters(self, layer_index, filter_indices):
-        """Remove layer's filters.
-
-        Be aware that following layers must be updated.
-
-        Parameters
-        ----------
-        layer_index : int
-            Layer index.
-        filter_indices : ndarray
-            A 1D array with indices to remove.
-        """
-
-        layer = self.LCN.feature_extractor[layer_index]
-        
-        assert isinstance(layer, SpecialConvLayer),\
-            "Layer is not a Special Conv Layer"
-
-        layer.remove_filters(filter_indices)
 
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
