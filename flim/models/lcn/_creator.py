@@ -467,6 +467,7 @@ class LCNCreator:
                     else:
                         kernel_size = operation_params['kernel_size']
                         dilation = operation_params.get('dilation', 0)
+                        epsilon = operation_params.get('epsilon', 1)
                         in_channels = last_conv_layer_out_channels
 
                         if isinstance(dilation, int):
@@ -494,7 +495,7 @@ class LCNCreator:
                     layer = operation(mean=mean,
                                       std=std,
                                       in_channels=last_conv_layer_out_channels,
-                                      default_std=self._default_std)
+                                      epsilon=epsilon)
 
                 elif layer_config['operation'] == "batch_norm2d" or layer_config['operation'] == "batch_norm3d":
                     layer = operation(
@@ -625,12 +626,12 @@ class LCNCreator:
                         operation_params['out_features'] = weights.shape[0]
 
                     layer = operation(**operation_params)
-                    layer.to(device)
                     #initialization
-                     
-                    nn.init.xavier_normal_(layer.weight.data, nn.init.calculate_gain('relu'))
+                    nn.init.xavier_normal_(layer.weight, nn.init.calculate_gain('relu'))
                     if layer.bias is not None:
                         nn.init.constant_(layer.bias, 0)
+
+                    layer.to(device)
 
                 else:
                     layer = operation(**operation_params)
