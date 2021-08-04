@@ -54,7 +54,7 @@ except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
-def load_image(path: str, lab: bool=True) -> npt.NDArray[np.float64]:
+def load_image(path: str, lab: bool=True) -> np.ndarray:
     if path.endswith('.mimg'):
         image = load_mimage(path)
     elif path.endswith('.nii.gz') or path.endswith('.nii.gz'):
