@@ -9,7 +9,7 @@
                     "stride": 1,
                     "padding": 2,
                     "dilation": 1,
-                    "number_of_kernels_per_marker": 8
+                    "number_of_kernels_per_marker": 32
                 }
             },
             "activation": {

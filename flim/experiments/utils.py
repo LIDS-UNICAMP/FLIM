@@ -526,21 +526,21 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
 
             layer.mean_by_channel = torch.from_numpy(mean).float()
-            layer.std_by_channel = torch.from_numpy(std).float()
+            layer.std_by_channel  = torch.from_numpy(std).float()
 
         if isinstance(layer, nn.Conv2d):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
                                             f"{name}-kernels.npy"))
 
-                in_channels = layer.in_channels
+                in_channels  = layer.in_channels
                 out_channels = layer.out_channels
-                kernel_size = layer.kernel_size
+                kernel_size  = layer.kernel_size
             
                 
                 weights = weights.transpose()
-                weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], in_channels)
-                weights = weights.transpose(0, 3, 1, 2)
+                weights = weights.reshape(out_channels, kernel_size[1], kernel_size[0], in_channels)
+                weights = weights.transpose(0, 3, 2, 1)
                 
                 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
