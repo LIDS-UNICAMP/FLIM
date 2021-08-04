@@ -5,7 +5,7 @@ import warnings
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 from skimage.util import view_as_windows
 
@@ -15,7 +15,6 @@ from sklearn.decomposition import PCA
 from scipy.spatial import distance
 
 import numpy as np
-from torch.nn.modules import module, padding
 
 from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
@@ -520,6 +519,15 @@ class LCNCreator:
                 elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d" \
                     or layer_config['operation'] == "max_pool3d" or layer_config['operation'] == "avg_pool3d":
 
+                    f_operations = {
+                        "max_pool2d": F.max_pool2d,
+                        "max_pool3d": F.max_pool3d,
+                        "avg_pool2d": F.avg_pool2d,
+                        "avg_pool3d": F.avg_pool3d
+                    }
+
+                    f_pool = f_operations[layer_config['operation']]
+
                     is_3d = "3d" in layer_config['operation']
 
                     stride = operation_params['stride']
@@ -542,10 +550,10 @@ class LCNCreator:
                     operation_params['stride'] = 1
                     operation_params['padding'] = [k_size//2 for k_size in kernel_size]
                     
-                    _layer = operation(**operation_params)
+                    #_layer = operation(**operation_params)
 
                     if images is not None and markers is not None:    
-                        torch_images = torch.Tensor(images)
+                        torch_images = torch.from_numpy(images)
 
                         if is_3d:
                             torch_images = torch_images.permute(0, 4, 3, 1, 2)
@@ -556,13 +564,16 @@ class LCNCreator:
                         input_size = input_shape[0]
                         
                         outputs = torch.Tensor([])
-                        layer = _layer.to(self.device)
-                        
-                        for i in range(0, input_size, batch_size):
-                            batch = torch_images[i: i+batch_size]
-                            output = _layer.forward(batch.to(device))
-                            output = output.detach().cpu()
-                            outputs = torch.cat((outputs, output))
+
+                        # temporarly ignore warnings till pytorch is fixed
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            with torch.no_grad():
+                                for i in range(0, input_size, batch_size):
+                                    batch = torch_images[i: i+batch_size]
+                                    output = f_pool(batch, **operation_params)
+                                    output = output.detach().cpu()
+                                    outputs = torch.cat((outputs, output))
 
                         if is_3d:
                             images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3], :input_shape[3]]
