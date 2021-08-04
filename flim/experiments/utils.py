@@ -739,7 +739,7 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         if hasattr(model, "features"):
             outputs = model.features(inputs).detach()
         else:
-            outputs = model.extract_features(inputs).detach()
+            outputs = model(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 
