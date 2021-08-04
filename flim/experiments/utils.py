@@ -37,7 +37,7 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm2d, LIDSConvNet
+from ..models.lcn import LCNCreator, MarkerBasedNorm2d, LIDSConvNet, MarkerBasedNorm3d
 from ._dataset import LIDSDataset
 
 from PIL import Image
@@ -546,7 +546,37 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 
                 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
-    
+                
+        if isinstance(layer, nn.Conv3d):
+
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"{name}-kernels.npy"))
+
+                in_channels = layer.in_channels
+                out_channels = layer.out_channels
+                kernel_size = layer.kernel_size
+            
+                weights = weights.transpose()
+                weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], kernel_size[2], in_channels)
+                weights = weights.transpose(0, 4, 1, 2, 3)
+                
+                layer.weight = nn.Parameter(torch.from_numpy(weights).float())
+
+        if isinstance(layer, MarkerBasedNorm3d):
+            conv_name = name.replace('m-norm', 'conv')
+            with open(os.path.join(lids_model_dir,
+                                            f"{conv_name}-mean.txt")) as f:
+                lines = f.readlines()[0]
+                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            with open(os.path.join(lids_model_dir,
+                                        f"{conv_name}-stdev.txt")) as f:
+                lines = f.readlines()[0]
+                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            
+            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1, 1)).float())
+            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1, 1)).float())        
+
     '''for name, layer in model.classifier.named_children():
         print(name)
         if isinstance(layer, SpecialLinearLayer):
