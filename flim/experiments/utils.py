@@ -511,7 +511,7 @@ def load_torchvision_model_weights(model, weigths_path):
 def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
 
-    for name, layer in model.features.named_children():
+    for name, layer in model.named_children():
         print(name)
         if isinstance(layer, MarkerBasedNorm2d):
             conv_name = name.replace('m-norm', 'conv')
