@@ -463,10 +463,11 @@ class LCNCreator:
                     if images is None or markers is None:
                         mean = None
                         std = None
+                        epsilon=0.001
                     else:
                         kernel_size = operation_params['kernel_size']
                         dilation = operation_params.get('dilation', 0)
-                        epsilon = operation_params.get('epsilon', 1)
+                        epsilon = operation_params.get('epsilon', 0.001)
                         in_channels = last_conv_layer_out_channels
 
                         if isinstance(dilation, int):
