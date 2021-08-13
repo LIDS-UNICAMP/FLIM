@@ -5,6 +5,7 @@ import os
 import warnings
 
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
+from skimage.util import img_as_float
 
 import numpy as np
 import numpy.typing as npt
@@ -74,10 +75,8 @@ def load_image(path: str, lab: bool=True) -> np.ndarray:
 
         image = rgb2lab(image)
 
-    max_v = image.max()
-    min_v = image.min()
-
-    image = (image)/(max_v)
+    if image.dtype != float:
+        image = img_as_float(image)
 
     return image
 
