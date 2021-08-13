@@ -263,7 +263,8 @@ def build_model(architecture,
                 remove_border=0,
                 relabel_markers=True,
                 default_std=1e-6,
-                device='cpu'):
+                device='cpu',
+                verbose=False):
         
     creator = LCNCreator(architecture,
                          images=images,
@@ -274,13 +275,14 @@ def build_model(architecture,
                          remove_border=remove_border,
                          default_std=default_std,
                          device=device)
-
-    print("Building model...")
-    creator.build_model()
+    if verbose:
+        print("Building model...")
+    creator.build_model(verbose=verbose)
 
     model = creator.get_LIDSConvNet()
 
-    print("Model ready.")
+    if verbose:
+        print("Model ready.")
 
     return model
 

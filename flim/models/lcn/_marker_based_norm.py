@@ -15,7 +15,7 @@ class _MarkerBasedNorm(nn.Module):
             mean = torch.zeros(in_channels, dtype=torch.float32)
 
         if std is None:
-            std = torch.ones(1, in_channels, dtype=torch.float32)
+            std = torch.ones(in_channels, dtype=torch.float32)
 
         self.register_buffer('mean_by_channel', nn.Parameter(mean))
         self.register_buffer('std_by_channel', nn.Parameter(std))

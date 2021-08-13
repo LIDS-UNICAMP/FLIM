@@ -146,7 +146,10 @@ class LCNCreator:
         
         self.LCN = LIDSConvNet(skips=self._skips, outputs_to_save=self._to_save_outputs, remove_boder=remove_border)
 
-    def build_model(self, remove_similar_filters: bool=False, similarity_level: float=0.85):
+    def build_model(self,
+                    remove_similar_filters: bool=False,
+                    similarity_level: float=0.85,
+                    verbose: bool=False):
         """Build the model.
 
         Parameters 
@@ -191,8 +194,6 @@ class LCNCreator:
 
         # TODO is it necessary to empty cuda memory?
         torch.cuda.empty_cache()
-
-
 
     def build_feature_extractor(self,
                                 remove_similar_filters=False,
@@ -271,7 +272,8 @@ class LCNCreator:
                       markers=None,
                       state_dict=None,
                       remove_similar_filters=False,
-                      similarity_level=0.85):
+                      similarity_level=0.85,
+                      verbose=False):
         """Builds a module.
 
         A module can have submodules.
@@ -328,7 +330,8 @@ class LCNCreator:
                 last_conv_layer_out_channels = output_shape[-1]
 
             layer_config = layers_arch[key]
-            print(f"Building {key}")
+            if verbose:
+                print(f"Building {key}")
         
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels, images, markers = self._build_module(new_module_name,
