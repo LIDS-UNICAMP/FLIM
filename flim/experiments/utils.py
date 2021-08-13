@@ -262,13 +262,8 @@ def build_model(architecture,
                 remove_border=0,
                 relabel_markers=True,
                 default_std=1e-6,
-                device='cpu'):
-
-    torch.manual_seed(42)
-    np.random.seed(42)
-
-    if device != 'cpu':
-        torch.backends.cudnn.deterministic = True
+                device='cpu',
+                verbose=False):
         
     creator = LCNCreator(architecture,
                          images=images,
@@ -279,17 +274,14 @@ def build_model(architecture,
                          remove_border=remove_border,
                          default_std=default_std,
                          device=device)
-
-    print("Building feature extractor...")
-    creator.build_feature_extractor()
-
-    if "classifier" in architecture:
-        print("Building classifier...")
-        creator.build_classifier(train_set)
+    if verbose:
+        print("Building model...")
+    creator.build_model(verbose=verbose)
 
     model = creator.get_LIDSConvNet()
 
-    print("Model ready.")
+    if verbose:
+        print("Model ready.")
 
     return model
 
