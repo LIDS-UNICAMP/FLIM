@@ -83,8 +83,8 @@ def load_image(path: str, lab: bool=True) -> np.ndarray:
 
 
 def image_to_rgb(image):
-    warnings.warn("'image_to_rgb' will be remove due to its misleading name",
-        "use 'from_lab_to_rgb' instead",
+    warnings.warn("'image_to_rgb' will be remove due to its misleading name. " +
+        "Use 'from_lab_to_rgb' instead",
         DeprecationWarning,
         stacklevel=2
     )

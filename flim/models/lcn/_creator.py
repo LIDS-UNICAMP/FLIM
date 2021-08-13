@@ -24,6 +24,8 @@ from ...utils import label_connected_components
 
 __all__ = ['LCNCreator']
 
+# TODO I think adaptative pooling 2D is missing
+
 __operations__ = {
     "max_pool2d": nn.MaxPool2d,
     "max_pool3d": nn.MaxPool3d,
@@ -138,7 +140,6 @@ class LCNCreator:
 
         self._default_std = default_std
         
-
         self._outputs = dict()
 
         self._skips = _find_skip_connections(self._architecture)
