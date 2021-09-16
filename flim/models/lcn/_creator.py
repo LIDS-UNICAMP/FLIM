@@ -5,7 +5,7 @@ import warnings
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 from skimage.util import view_as_windows
 
@@ -15,9 +15,7 @@ from sklearn.decomposition import PCA
 from scipy.spatial import distance
 
 import numpy as np
-from torch.nn.modules import module, padding
 
-from ._special_linear_layer import SpecialLinearLayer
 from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
 from ._decoder import Decoder
@@ -34,7 +32,7 @@ __operations__ = {
     "conv2d": nn.Conv2d,
     "conv3d": nn.Conv3d,
     "relu": nn.ReLU,
-    "linear": SpecialLinearLayer,
+    "linear": nn.Linear,
     'marker_based_norm': MarkerBasedNorm2d,
     'm_norm2d': MarkerBasedNorm2d,
     'm_norm3d': MarkerBasedNorm3d,
@@ -148,6 +146,55 @@ class LCNCreator:
         
         self.LCN = LIDSConvNet(skips=self._skips, outputs_to_save=self._to_save_outputs, remove_boder=remove_border)
 
+    def build_model(self,
+                    remove_similar_filters: bool=False,
+                    similarity_level: float=0.85,
+                    verbose: bool=False):
+        """Build the model.
+
+        Parameters 
+        ----------
+        remove_similar_filters : bool, optional
+            Keep only one of a set of similar filters, by default False.
+        similarity_level : float, optional
+            A value in range :math:`(0, 1]`. \
+            If filters have inner product greater than value, \
+            only one of them are kept. by default 0.85.
+
+        """
+
+        architecture = self._architecture
+        images = self._images
+        markers = self._markers
+
+        for module_name, module_arch in architecture.items():
+
+            if "input" in self._to_save_outputs:
+                self._outputs['input'] = images
+            
+            if self._relabel_markers and markers is not None:
+                start_label = 2 if self._has_superpixel_markers else 1
+                markers = label_connected_components(markers,
+                                                        start_label,
+                                                        is_3d=markers.ndim == 4)
+
+            if self._has_superpixel_markers:
+                markers += self._superpixel_markers
+
+            module, _, _, _ = self._build_module(module_name,
+                                        module_arch,
+                                        images,
+                                        markers,
+                                        remove_similar_filters=remove_similar_filters,
+                                        similarity_level=similarity_level)
+
+            # self.last_conv_layer_out_channels = out_channels
+
+            self.LCN.add_module(module_name, module)
+
+        # TODO is it necessary to empty cuda memory?
+        torch.cuda.empty_cache()
+
     def build_feature_extractor(self,
                                 remove_similar_filters=False,
                                 similarity_level=0.85):
@@ -166,35 +213,40 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
 
         """
+        warnings.warn("This function is deprecated. "
+                      "Please use the 'build_model' method instead.",
+                      DeprecationWarning,
+                      stacklevel=2)
+
         self._output_shape = self._input_shape
 
-        if "features" in self._architecture:
-            architecture = self._architecture['features']
-            images = self._images
-            markers = self._markers
+        
+        architecture = self._architecture
+        images = self._images
+        markers = self._markers
 
-            if "input" in self._to_save_outputs:
-                self._outputs['input'] = images
-            
-            if self._relabel_markers and markers is not None:
-                start_label = 2 if self._has_superpixel_markers else 1
-                markers = label_connected_components(markers,
-                                                     start_label,
-                                                     is_3d=markers.ndim == 4)
+        if "input" in self._to_save_outputs:
+            self._outputs['input'] = images
+        
+        if self._relabel_markers and markers is not None:
+            start_label = 2 if self._has_superpixel_markers else 1
+            markers = label_connected_components(markers,
+                                                    start_label,
+                                                    is_3d=markers.ndim == 4)
 
-            if self._has_superpixel_markers:
-                markers += self._superpixel_markers
+        if self._has_superpixel_markers:
+            markers += self._superpixel_markers
 
-            module, out_channels, _, _ = self._build_module(None,
-                                        architecture,
-                                        images,
-                                        markers,
-                                        remove_similar_filters=remove_similar_filters,
-                                        similarity_level=similarity_level)
+        module, out_channels, _, _ = self._build_module(None,
+                                    architecture,
+                                    images,
+                                    markers,
+                                    remove_similar_filters=remove_similar_filters,
+                                    similarity_level=similarity_level)
 
-            self.last_conv_layer_out_channels = out_channels
+        self.last_conv_layer_out_channels = out_channels
 
-            self.LCN.feature_extractor = module
+        self.LCN.feature_extractor = module
 
         torch.cuda.empty_cache()
 
@@ -220,7 +272,8 @@ class LCNCreator:
                       markers=None,
                       state_dict=None,
                       remove_similar_filters=False,
-                      similarity_level=0.85):
+                      similarity_level=0.85,
+                      verbose=False):
         """Builds a module.
 
         A module can have submodules.
@@ -254,7 +307,8 @@ class LCNCreator:
 
         batch_size = self._batch_size
 
-        module_type = module_arch['type']
+        # assume that module is sequential
+        module_type = module_arch.get("type", "sequential")
 
         if module_type == 'parallel':
             module = ParallelModule()
@@ -276,7 +330,8 @@ class LCNCreator:
                 last_conv_layer_out_channels = output_shape[-1]
 
             layer_config = layers_arch[key]
-            print(f"Building {key}")
+            if verbose:
+                print(f"Building {key}")
         
             if "type" in layer_config:
                 _module, last_conv_layer_out_channels, images, markers = self._build_module(new_module_name,
@@ -340,7 +395,7 @@ class LCNCreator:
                 
                     out_channels = operation_params.get('out_channels', None)
 
-                    assert out_channels or markers,\
+                    assert out_channels is not None or markers is not None,\
                         "`out_channels` or `markers` must be defined."
                     
                     in_channels = last_conv_layer_out_channels
@@ -363,8 +418,9 @@ class LCNCreator:
                     if (images is None or markers is None) and state_dict is not None:
                         out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
 
-                    assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
-                        f"The number of kernels per marker is not enough to generate {out_channels} kernels."
+                    if out_channels is not None:
+                        assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
+                            f"The number of kernels per marker is not enough to generate {out_channels} kernels."
                     
                     weights = _initialize_convNd_weights(images,
                                                          markers,
@@ -375,9 +431,9 @@ class LCNCreator:
                                                          number_of_kernels_per_marker=number_of_kernels_per_marker,
                                                          use_random_kernels=use_random_kernels,
                                                          default_std=default_std)
-
-                    assert weights.shape[0] == out_channels, \
-                        f"Weights with {weights.shape} is not correct."
+                    if out_channels is not None:
+                        assert weights.shape[0] == out_channels, \
+                            f"Weights with {weights.shape} is not correct."
                                                          
                     if out_channels is None:
                         out_channels = weights.shape[0]
@@ -410,9 +466,11 @@ class LCNCreator:
                     if images is None or markers is None:
                         mean = None
                         std = None
+                        epsilon=0.001
                     else:
                         kernel_size = operation_params['kernel_size']
                         dilation = operation_params.get('dilation', 0)
+                        epsilon = operation_params.get('epsilon', 0.001)
                         in_channels = last_conv_layer_out_channels
 
                         if isinstance(dilation, int):
@@ -429,18 +487,16 @@ class LCNCreator:
 
                         if is_3d:
                             axis = (0, 1, 2, 3)
-                            view = (1, -1, 1, 1, 1)
                         else:
                             axis = (0, 1, 2)
-                            view = (1, -1, 1, 1)
 
-                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).view(view).float()
-                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).view(view).float()
+                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).flatten().float()
+                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).flatten().float()
                     
                     layer = operation(mean=mean,
                                       std=std,
                                       in_channels=last_conv_layer_out_channels,
-                                      default_std=self._default_std)
+                                      epsilon=epsilon)
 
                 elif layer_config['operation'] == "batch_norm2d" or layer_config['operation'] == "batch_norm3d":
                     layer = operation(
@@ -467,6 +523,15 @@ class LCNCreator:
                 elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d" \
                     or layer_config['operation'] == "max_pool3d" or layer_config['operation'] == "avg_pool3d":
 
+                    f_operations = {
+                        "max_pool2d": F.max_pool2d,
+                        "max_pool3d": F.max_pool3d,
+                        "avg_pool2d": F.avg_pool2d,
+                        "avg_pool3d": F.avg_pool3d
+                    }
+
+                    f_pool = f_operations[layer_config['operation']]
+
                     is_3d = "3d" in layer_config['operation']
 
                     stride = operation_params['stride']
@@ -489,10 +554,10 @@ class LCNCreator:
                     operation_params['stride'] = 1
                     operation_params['padding'] = [k_size//2 for k_size in kernel_size]
                     
-                    _layer = operation(**operation_params)
+                    #_layer = operation(**operation_params)
 
                     if images is not None and markers is not None:    
-                        torch_images = torch.Tensor(images)
+                        torch_images = torch.from_numpy(images)
 
                         if is_3d:
                             torch_images = torch_images.permute(0, 4, 3, 1, 2)
@@ -503,13 +568,16 @@ class LCNCreator:
                         input_size = input_shape[0]
                         
                         outputs = torch.Tensor([])
-                        layer = _layer.to(self.device)
-                        
-                        for i in range(0, input_size, batch_size):
-                            batch = torch_images[i: i+batch_size]
-                            output = _layer.forward(batch.to(device))
-                            output = output.detach().cpu()
-                            outputs = torch.cat((outputs, output))
+
+                        # temporarly ignore warnings till pytorch is fixed
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            with torch.no_grad():
+                                for i in range(0, input_size, batch_size):
+                                    batch = torch_images[i: i+batch_size]
+                                    output = f_pool(batch, **operation_params)
+                                    output = output.detach().cpu()
+                                    outputs = torch.cat((outputs, output))
 
                         if is_3d:
                             images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3], :input_shape[3]]
@@ -559,8 +627,28 @@ class LCNCreator:
                     layer = operation(images, self._markers, device=device, **operation_params)
                     layer.to(device)
 
+                elif layer_config['operation'] == 'linear':
+                    if operation_params['in_features'] == -1:
+                        operation_params['in_features'] = np.prod(self._output_shape)
+                        _flatten_layer = nn.Flatten()
+                        module.add_module("flatten", _flatten_layer)
+
+                    if state_dict is not None:
+                        weights = state_dict[f'classifier.{key}._linear.weight']
+                        operation_params['in_features'] = weights.shape[1]
+                        operation_params['out_features'] = weights.shape[0]
+
+                    layer = operation(**operation_params)
+                    #initialization
+                    nn.init.xavier_normal_(layer.weight, nn.init.calculate_gain('relu'))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0)
+
+                    layer.to(device)
+
                 else:
                     layer = operation(**operation_params)
+
                     
                 if images is not None and markers is not None:    
                     torch_images = torch.Tensor(images)
@@ -572,7 +660,7 @@ class LCNCreator:
                     
                     input_size = torch_images.size(0)
                     
-                    if layer_config['operation'] != "unfold" and not ('pool' in layer_config['operation']):
+                    if layer_config['operation'] != "unfold" and not ('pool' in layer_config['operation']) and not ('linear' in layer_config['operation']):
                         outputs = torch.Tensor([])
                         layer = layer.to(self.device)
                         
@@ -602,116 +690,6 @@ class LCNCreator:
         self._output_shape = output_shape
         
         return module, last_conv_layer_out_channels, images, markers
-    
-    def build_classifier(self, train_set=None, state_dict=None):
-        """Buid the classifier."""
-
-        model = self.LCN
-
-        if model is None:
-            model = LIDSConvNet(self._remove_border, self._skips, self._to_save_outputs)
-            self.LCN = model
-
-        classifier = model.classifier
-        
-        architecture = self._architecture
-
-
-        assert "classifier" in architecture, \
-            "Achitecture does not specify a classifier"
-            
-        features = None
-        all_labels = None
-        use_backpropagation = 'backpropagation' in architecture['classifier'] and architecture['classifier']['backpropagation']
-        
-        if train_set is not None and not use_backpropagation:
-            loader = DataLoader(train_set, self._batch_size, shuffle=False)
-            for inputs, labels in loader:
-                inputs = inputs.to(self.device)
-
-                outputs = model.feature_extractor(inputs).detach().cpu().flatten(1)
-
-                if features is None:
-                    features = outputs
-                    all_labels = labels
-                else:
-                    features = torch.cat((features, outputs))
-                    all_labels = torch.cat((all_labels, labels))
-        
-            features = features.numpy()
-            all_labels.numpy()
-
-        cls_architecture = architecture['classifier']['layers']
-
-        for key in cls_architecture:
-            layer_config = cls_architecture[key]
-            
-            operation = __operations__[layer_config['operation']]
-            operation_params = layer_config['params']
-            
-            if layer_config['operation'] == 'linear':
-                if operation_params['in_features'] == -1:
-                    operation_params['in_features'] = np.prod(self._output_shape)
-                if train_set is None and state_dict is not None:
-                    weights = state_dict[f'classifier.{key}._linear.weight']
-                    operation_params['in_features'] = weights.shape[1]
-                    operation_params['out_features'] = weights.shape[0]
-
-                layer = operation(**operation_params)
-
-                if use_backpropagation:
-                    layer.initialize_weights()
-                else:
-                    layer.initialize_weights(features, all_labels)
-            else:
-                layer = operation(**operation_params)
-
-            if features is not None and not use_backpropagation:
-                torch_features = torch.Tensor(features)
-                
-                input_size = torch_features.size(0)
-                
-                outputs = torch.Tensor([])
-                _module = layer.to(self.device)
-                
-                for i in range(0, input_size, self._batch_size):
-                    batch = torch_features[i: i+self._batch_size]
-                    output = _module.forward(batch.to(self.device))
-                    output = output.detach().cpu()
-                    outputs = torch.cat((outputs, output))
-                
-                features = outputs.numpy()
-
-            classifier.add_module(key, layer)
-
-        #initialization
-        if features is None or use_backpropagation:
-            for m in classifier.modules():
-                if isinstance(m, SpecialLinearLayer):
-                    m._linear.weight.data.normal_(0, 0.01)
-                    if m._linear.bias is not None:
-                        nn.init.constant_(m._linear.bias, 0)   
-        torch.cuda.empty_cache()
-
-    def remove_filters(self, layer_index, filter_indices):
-        """Remove layer's filters.
-
-        Be aware that following layers must be updated.
-
-        Parameters
-        ----------
-        layer_index : int
-            Layer index.
-        filter_indices : ndarray
-            A 1D array with indices to remove.
-        """
-
-        layer = self.LCN.feature_extractor[layer_index]
-        
-        assert isinstance(layer, SpecialConvLayer),\
-            "Layer is not a Special Conv Layer"
-
-        layer.remove_filters(filter_indices)
 
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
@@ -826,11 +804,10 @@ def _find_skip_connections_in_module(module_name, module):
     return skips
 
 def _find_skip_connections(arch):
-    if "features" in arch:
-        arch = arch['features']
-
-    skips = _find_skip_connections_in_module(None, arch)
-
+    skips = dict()
+    for module_name, module_arch in arch.items():
+        sub_modules_skips = _find_skip_connections_in_module(module_name, module_arch)
+        skips.update(sub_modules_skips)
     return skips
 
 def _find_outputs_to_save(skips):
@@ -957,8 +934,7 @@ def _generate_patches(images,
 
             image_pad = np.pad(image, padding,
                             mode='constant', constant_values=0)
-
-
+            # TODO check if patches_shape is valid
             patches = view_as_windows(image_pad,
                                       patches_shape,
                                       step=1)

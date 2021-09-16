@@ -37,7 +37,9 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm2d, LIDSConvNet, MarkerBasedNorm3d
+
+from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSConvNet
+
 from ._dataset import LIDSDataset
 
 from PIL import Image
@@ -54,7 +56,7 @@ except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
-def load_image(path: str, lab: bool=True) -> npt.NDArray[np.float64]:
+def load_image(path: str, lab: bool=True) -> np.ndarray:
     if path.endswith('.mimg'):
         image = load_mimage(path)
     elif path.endswith('.nii.gz') or path.endswith('.nii.gz'):
@@ -77,7 +79,7 @@ def load_image(path: str, lab: bool=True) -> npt.NDArray[np.float64]:
     max_v = image.max()
     min_v = image.min()
 
-    image = (image - min_v)/(max_v - min_v)
+    image = (image)/(max_v)
 
     return image
 
@@ -263,13 +265,8 @@ def build_model(architecture,
                 remove_border=0,
                 relabel_markers=True,
                 default_std=1e-6,
-                device='cpu'):
-
-    torch.manual_seed(42)
-    np.random.seed(42)
-
-    if device != 'cpu':
-        torch.backends.cudnn.deterministic = True
+                device='cpu',
+                verbose=False):
         
     creator = LCNCreator(architecture,
                          images=images,
@@ -280,17 +277,14 @@ def build_model(architecture,
                          remove_border=remove_border,
                          default_std=default_std,
                          device=device)
-
-    print("Building feature extractor...")
-    creator.build_feature_extractor()
-
-    if "classifier" in architecture:
-        print("Building classifier...")
-        creator.build_classifier(train_set)
+    if verbose:
+        print("Building model...")
+    creator.build_model(verbose=verbose)
 
     model = creator.get_LIDSConvNet()
 
-    print("Model ready.")
+    if verbose:
+        print("Model ready.")
 
     return model
 
@@ -392,10 +386,10 @@ def train_model(model,
                 only_classifier=False,
                 wandb=None):
 
-    torch.manual_seed(42)
-    np.random.seed(42)
-    if device != 'cpu':
-        torch.backends.cudnn.deterministic = True
+    #torch.manual_seed(42)
+    #np.random.seed(42)
+    #if device != 'cpu':
+    #    torch.backends.cudnn.deterministic = True
     
     dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
     
@@ -443,7 +437,6 @@ def train_model(model,
             optimizer.zero_grad()
 
             outputs = model(inputs)
-            
             loss = criterion(outputs, labels)
             preds = torch.max(outputs, 1)[1]
             
@@ -512,7 +505,7 @@ def load_torchvision_model_weights(model, weigths_path):
 def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
 
-    for name, layer in model.feature_extractor.named_children():
+    for name, layer in model.named_children():
         print(name)
         if isinstance(layer, MarkerBasedNorm2d):
             conv_name = name.replace('m-norm', 'conv')
@@ -526,23 +519,22 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 lines = f.readlines()[0]
                 std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
 
-            
-            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1)).float())
-            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1)).float())
+            layer.mean_by_channel = torch.from_numpy(mean).float()
+            layer.std_by_channel  = torch.from_numpy(std).float()
 
         if isinstance(layer, nn.Conv2d):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
                 weights = np.load(os.path.join(lids_model_dir,
                                             f"{name}-kernels.npy"))
 
-                in_channels = layer.in_channels
+                in_channels  = layer.in_channels
                 out_channels = layer.out_channels
-                kernel_size = layer.kernel_size
+                kernel_size  = layer.kernel_size
             
                 
                 weights = weights.transpose()
-                weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], in_channels)
-                weights = weights.transpose(0, 3, 1, 2)
+                weights = weights.reshape(out_channels, kernel_size[1], kernel_size[0], in_channels)
+                weights = weights.transpose(0, 3, 2, 1)
                 
                 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
@@ -599,6 +591,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 layer.std = torch.from_numpy(std.reshape(1, -1)).float()
                 
                 layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())'''
+
     print("Finish loading...")     
     return model
 
@@ -754,7 +747,7 @@ def train_svm(model, train_set, batch_size=32, max_iter=10000, device='cpu', C=1
     y = torch.Tensor([]).long()
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model.extract_features(inputs).detach()
+        outputs = model(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
         y = torch.cat((y, labels.cpu()))
     
@@ -794,7 +787,7 @@ def validate_svm(model, clf, val_set, batch_size=32, device='cpu'):
         if hasattr(model, "features"):
             outputs = model.features(inputs).detach()
         else:
-            outputs = model.extract_features(inputs).detach()
+            outputs = model(inputs).detach()
         
         preds = clf.predict(outputs.cpu().flatten(start_dim=1))
 
