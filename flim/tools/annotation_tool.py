@@ -17,9 +17,9 @@ from magicgui.widgets import FloatSlider
 
 from contextlib import contextmanager
 
-from PySide2.QtWidgets import QApplication
-from PySide2.QtGui import QCursor
-from PySide2.QtCore import Qt
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QCursor
+from PyQt5.QtCore import Qt
 
 from numba import jit, njit
 
@@ -70,7 +70,7 @@ def load_label_image(label_path):
 
         #images dimensions are flipped
         image_shape = (label_infos[2], label_infos[1])
-        label_image = np.zeros(image_shape, dtype=np.int)
+        label_image = np.zeros(image_shape, dtype=np.int16)
 
         for line in lines[1:]:
             split_line = line.split(" ")
@@ -89,7 +89,7 @@ def load_image(image_dir):
     return image
 
 def _save_markers(markers, markers_dir):
-    markers = markers.astype(np.int)
+    markers = markers.astype(np.int16)
     mask = markers != 0
     
     number_of_markers = mask.sum()
@@ -161,7 +161,7 @@ def get_markers_from_superpixels(image):
     image_markers = np.zeros((image.shape[0:2]))
     image_markers[centers[:, 0], centers[:, 1]] = 1
 
-    return image_markers.astype(np.int)
+    return image_markers.astype(np.int16)
 
 @jit
 def turn_superpixels_in_markers(superpixels, markers):
@@ -190,7 +190,7 @@ def turn_superpixels_borders_in_markers(superpixels, markers):
     markers_mask = markers != 0
     boundaries = find_boundaries(superpixels,
                                  connectivity=2,
-                                 mode="inner").astype(np.int)
+                                 mode="inner").astype(np.int16)
     for label in labels:
         superpixel_mask = np.logical_and(superpixels == label, boundaries)
         # flag = np.any(np.logical_and(markers_mask, superpixel_mask))
@@ -215,7 +215,7 @@ def create_viewer(image_dir,
                   ):
 
     image = load_image(image_dir)
-    initial = np.zeros(image.shape[:2], dtype=np.int)
+    initial = np.zeros(image.shape[:2], dtype=np.int16)
 
     if n_superpixels > 0:
         super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
@@ -246,7 +246,7 @@ def create_viewer(image_dir,
     if super_pixels is not None:
         boundaries = find_boundaries(super_pixels,
                                         connectivity=2,
-                                        mode="inner").astype(np.int)
+                                        mode="inner").astype(np.int16)
         boundaries[boundaries != 0] = 9
         viewer.add_labels(boundaries, name='superpixels', opacity=1)
     else:
@@ -259,7 +259,7 @@ def create_viewer(image_dir,
 
     @viewer.bind_key('r')
     def refresh(viewer):
-        initial = np.zeros(image.shape[:2], dtype=np.int)
+        initial = np.zeros(image.shape[:2], dtype=np.int16)
         viewer.layers['markers'].data = initial
         # viewer.layers['instability map'].data = initial
 
@@ -303,7 +303,7 @@ def create_viewer(image_dir,
                     super_pixels, _ = get_superpixels_of_image(image, n_superpixels)
                     boundaries = find_boundaries(super_pixels,
                                                 connectivity=1,
-                                                mode="inner").astype(np.int)
+                                                mode="inner").astype(np.int16)
                     boundaries[boundaries != 0] = 9
                     print(boundaries.max())
                     viewer.layers['superpixels'].data = boundaries

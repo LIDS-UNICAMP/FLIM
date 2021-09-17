@@ -4,16 +4,16 @@ Feature Learning from Image Markers is a technique to learn the filter of convol
 
 This package provides an implementation of this technique powered by Pytorch, Scikit-learn, and Scikit-image.
 
-To install it, go to the folder where the package it and run the command
-
- ```
- pip install . 
- ```
-
  To install dependencies run the command
 
  ```
  pip install -r requirements.txt
+ ```
+
+To install it, go to the folder where the package it and run the command
+
+ ```
+ pip install . 
  ```
 
 > :warning: It is recommended to create a virtual enviroment before instaling this package.
