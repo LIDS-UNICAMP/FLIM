@@ -1,0 +1,134 @@
+{
+    "features": {
+        "type": "sequential",
+        "layers": {
+            "block1": {
+                "type": "sequential",
+                "layers": {
+                    "m_norm": {
+                        "operation": "marker_based_norm",
+                        "params": {
+                            "kernel_size": 3,
+                            "dilation": 1
+                        }
+                    },
+                    "conv": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 1,
+                            "dilation": 1,
+                            "out_channels": 64
+                        }
+                    },
+        
+                    "activation": {
+                        "operation": "relu",
+                        "params": {
+                            "inplace": true
+                        }
+                    },
+                    "m_norm2": {
+                        "operation": "marker_based_norm",
+                        "params": {
+                            "kernel_size": 3,
+                            "dilation": 1
+                        }
+                    },
+                    "conv2": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 1,
+                            "dilation": 1,
+                            "out_channels": 64
+                        }
+                    },
+        
+                    "activation2": {
+                        "operation": "relu",
+                        "params": {
+                            "inplace": true
+                        }
+                    }
+                }
+            },
+            "block2": {
+                "type": "sequential",
+                "layers": {
+                    "pool": {
+                        "operation": "max_pool2d",
+                        "params": {
+                            "kernel_size": 2,
+                            "stride": 2,
+                            "padding": 0
+                        }
+                    },
+                    "m_norm": {
+                        "operation": "marker_based_norm",
+                        "params": {
+                            "kernel_size": 3,
+                            "dilation": 1
+                        }
+                    },
+                    "conv": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 1,
+                            "dilation": 1,
+                            "out_channels": 128
+                        }
+                    },
+        
+                    "activation": {
+                        "operation": "relu",
+                        "params": {
+                            "inplace": true
+                        }
+                    }
+                }
+            },
+            "block3":{
+                "type": "sequential",
+                "layers": {
+                    "pool": {
+                        "operation": "max_pool2d",
+                        "params": {
+                            "kernel_size": 2,
+                            "stride": 2,
+                            "padding": 0
+                        }
+                    },
+                    "m_norm": {
+                        "operation": "marker_based_norm",
+                        "params": {
+                            "kernel_size": 3,
+                            "dilation": 1
+                        }
+                    },
+                    "conv": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 1,
+                            "dilation": 1,
+                            "out_channels": 256
+                        }
+                    },
+        
+                    "activation": {
+                        "operation": "relu",
+                        "params": {
+                            "inplace": true
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
