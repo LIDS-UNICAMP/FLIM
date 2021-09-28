@@ -9,7 +9,8 @@
                     "stride": 1,
                     "padding": 2,
                     "dilation": 1,
-                    "number_of_kernels_per_marker": 32
+                    "number_of_kernels_per_marker": 32,
+                    "out_channels": 64
                 }
             },
             "activation": {
@@ -21,7 +22,7 @@
             "pool": {
                 "operation": "max_pool2d",
                 "params": {
-                    "kernel_size": 3,
+                    "kernel_size": 2,
                     "stride": 4,
                     "padding": 0
                 }

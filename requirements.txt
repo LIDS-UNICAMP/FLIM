@@ -14,5 +14,5 @@ pylama
 termcolor 
 numba
 nibabel
-napari[pyside2]
+napari[pyqt5]
 magicgui

@@ -40,14 +40,14 @@ It is possible to define the model architecture using a JSON that must respect t
 
 ```
 {
-    "features": ...
-    "classifier": ...
+    "module_name1": ...
+    "module_name2": ...
+    ...
+    "module_nameN": ...
 }
 ```
 
-The key "features" specifies the feature extractor architecture, and the key "classifier" specifies a classifier. The key "classifier" is optional.
-
-An example of a feature extractor:
+An example of a module:
 
 ```
 "features": {
@@ -60,7 +60,8 @@ An example of a feature extractor:
                     "stride": 1,
                     "padding": 2,
                     "dilation": 1,
-                    "number_of_kernels_per_marker": 8
+                    "number_of_kernels_per_marker": 8,
+                    "out_channels": 32
                 }
             },
             "activation": {
@@ -87,14 +88,20 @@ In this example, "features" is a module of type `sequential` - that is, each sub
 Each layer has a name, which is the key, and it is necessary to inform the type of the layer through the "operation" field. A list of currently supported operations:
 
 * "max_pool2d"
+* "max_pool3d"
 * "conv2d"
+* "conv3d"
 * "relu"
 * "linear"
 * "batch_norm2d"
+* "batch_norm3d"
 * "dropout"
 * "adap_avg_pool2d"
+* "adap_max_pool2d"
 * "unfold"
 * "fold"
+* "m_norm2d"
+* "m_norm3d"
 
 Every layer must be specified as follows:
 

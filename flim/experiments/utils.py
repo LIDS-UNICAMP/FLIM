@@ -5,6 +5,7 @@ import os
 import warnings
 
 from skimage.color import rgb2lab, gray2rgb, rgba2rgb
+from skimage.util import img_as_float
 
 import numpy as np
 import numpy.typing as npt
@@ -37,7 +38,9 @@ from collections import OrderedDict
 
 from skimage.color import lab2rgb
 
+
 from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSConvNet
+
 from ._dataset import LIDSDataset
 
 from PIL import Image
@@ -74,17 +77,15 @@ def load_image(path: str, lab: bool=True) -> np.ndarray:
 
         image = rgb2lab(image)
 
-    max_v = image.max()
-    min_v = image.min()
-
-    image = (image)/(max_v)
+    if image.dtype != float:
+        image = img_as_float(image)
 
     return image
 
 
 def image_to_rgb(image):
-    warnings.warn("'image_to_rgb' will be remove due to its misleading name",
-        "use 'from_lab_to_rgb' instead",
+    warnings.warn("'image_to_rgb' will be remove due to its misleading name. " +
+        "Use 'from_lab_to_rgb' instead",
         DeprecationWarning,
         stacklevel=2
     )
@@ -536,6 +537,60 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 
                 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
+                
+        if isinstance(layer, nn.Conv3d):
+
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"{name}-kernels.npy"))
+
+                in_channels = layer.in_channels
+                out_channels = layer.out_channels
+                kernel_size = layer.kernel_size
+            
+                weights = weights.transpose()
+                weights = weights.reshape(out_channels, kernel_size[0], kernel_size[1], kernel_size[2], in_channels)
+                weights = weights.transpose(0, 4, 1, 2, 3)
+                
+                layer.weight = nn.Parameter(torch.from_numpy(weights).float())
+
+        if isinstance(layer, MarkerBasedNorm3d):
+            conv_name = name.replace('m-norm', 'conv')
+            with open(os.path.join(lids_model_dir,
+                                            f"{conv_name}-mean.txt")) as f:
+                lines = f.readlines()[0]
+                mean = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            with open(os.path.join(lids_model_dir,
+                                        f"{conv_name}-stdev.txt")) as f:
+                lines = f.readlines()[0]
+                std = np.array([float(line) for line in lines.split(' ') if len(line) > 0])
+            
+            layer.mean_by_channel = nn.Parameter(torch.from_numpy(mean.reshape(1, -1, 1, 1, 1)).float())
+            layer.std_by_channel = nn.Parameter(torch.from_numpy(std.reshape(1, -1, 1, 1, 1)).float())        
+
+    '''for name, layer in model.classifier.named_children():
+        print(name)
+        if isinstance(layer, SpecialLinearLayer):
+            if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
+                weights = np.load(os.path.join(lids_model_dir,
+                                            f"split{split}-{name}-weights.npy"))
+                weights = weights.transpose()
+                
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-mean.txt")) as f:
+                    lines = f.readlines()
+                    mean = np.array([float(line) for line in lines])
+                    
+                with open(os.path.join(lids_model_dir,
+                                            f"{name}-stdev.txt")) as f:
+                    lines = f.readlines()
+                    std = np.array([float(line) for line in lines])
+                    
+                layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
+                layer.std = torch.from_numpy(std.reshape(1, -1)).float()
+                
+                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())'''
+
     print("Finish loading...")     
     return model
 
