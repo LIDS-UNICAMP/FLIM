@@ -1,5 +1,6 @@
-numpy
+numpy>=1.20
 torch
+torchvision
 setuptools
 scikit-image
 sklearn
@@ -10,3 +11,8 @@ mccabe
 pydocstyle
 flake8
 pylama
+termcolor 
+numba
+nibabel
+napari[pyside2]
+magicgui

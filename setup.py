@@ -14,7 +14,7 @@ setuptools.setup(
     description='A package to build deep learning models from images markers.',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/italosestilon/FLIM",
+    url="https://github.com/LIDS-UNICAMP/FLIM",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -29,10 +29,18 @@ setuptools.setup(
     ],
     install_requires=[
         "torch",
-        "numpy",
+        "torchvision",
+        "numpy>=1.20",
         "scikit-image",
         "sklearn",
-        "setuptools"
+        "setuptools",
+        "numba",
+        "termcolor",
+        "nibabel"
     ],
-    python_requires='>=3.6'
+    python_requires='>=3.8',
+    entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
+                                      'validate=flim.tools.validating_tool:main',
+                                      "annotation=flim.tools.annotation_tool:main"
+                                     ]}
 )
