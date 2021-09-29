@@ -58,18 +58,7 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
-        outputs = dict()
-        if 'input' in self._outputs_to_save:
-            outputs['input'] = x
-
-        for layer_name, layer in self.named_modules():
-
-            if layer_name in self._skips:
-                concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
-                x = concat
-
-            if isinstance(layer, (nn.Sequential, ParallelModule)):
-                continue
+        for _, layer in self.named_children():
 
             if isinstance(layer, nn.Fold):
                 x = x.permute(0, 2, 1)
@@ -78,9 +67,6 @@ class LIDSConvNet(nn.Sequential):
 
             if isinstance(layer, nn.Unfold):
                 y = y.permute(0, 2, 1)
-
-            if layer_name in self._outputs_to_save:
-                outputs[layer_name] = y
 
             x = y
     
@@ -127,6 +113,6 @@ class ParallelModule(nn.ModuleList):
         for module in self.children():
             outputs.append(module(x))
 
-        return torch.cat(outputs, 0)
+        return torch.cat(outputs, 1)
 
 

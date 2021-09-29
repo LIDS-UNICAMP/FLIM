@@ -1,0 +1,89 @@
+{
+    "features": {
+        "type": "sequential",
+        "layers": {
+            "conv1": {
+                "operation": "conv2d",
+                "params": {
+                    "kernel_size": 5,
+                    "stride": 1,
+                    "padding": 2,
+                    "dilation": 1,
+                    "number_of_kernels_per_marker": 32,
+                    "out_channels": 64
+                }
+            },
+            "activation": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+            "pool": {
+                "operation": "max_pool2d",
+                "params": {
+                    "kernel_size": 2,
+                    "stride": 4,
+                    "padding": 0
+                }
+            },
+
+            "norm1": {
+                "operation": "batch_norm2d",
+                "params": {}
+            }
+        }
+    },
+
+    "classifier": {
+        "layers": {
+            "linear1": {
+                "operation": "linear",
+                "params": {
+                    "in_features": -1,
+                    "out_features": 512
+                }
+            },
+
+            
+            "relu3": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+            "drop1": {
+                "operation": "dropout",
+                "params": {}
+            },
+
+            "linear2": {
+                "operation": "linear",
+                "params": {
+                    "in_features": 512,
+                    "out_features": 512
+                }
+            },
+
+            "relu4": {
+                "operation": "relu",
+                "params": {
+                    "inplace": true
+                }
+            },
+
+            "drop2": {
+                "operation": "dropout",
+                "params": {}
+            },
+
+            "linear3": {
+                "operation": "linear",
+                "params": {
+                    "in_features": 512,
+                    "out_features": 2
+                }
+            }
+        }
+    }
+}

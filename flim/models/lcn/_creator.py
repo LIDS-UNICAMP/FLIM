@@ -2,6 +2,7 @@
 
 import math
 import warnings
+import scipy as sp
 
 import torch
 import torch.nn as nn
@@ -121,7 +122,7 @@ class LCNCreator:
         self._relabel_markers = relabel_markers
         self._images = images
         self._markers = markers
-        self._input_shape = np.array(input_shape)
+        self._input_shape = input_shape
         self._architecture = architecture
     
         if images is None:
@@ -181,11 +182,14 @@ class LCNCreator:
 
             if self._has_superpixel_markers:
                 markers += self._superpixel_markers
-
-            module, _, _, _ = self._build_module(module_name,
+            input_shape = self._input_shape
+            if len(input_shape) == 1:
+                input_shape = [0, 0, *input_shape]
+            module, module_output_shape, _, _ = self._build_module(module_name,
                                         module_arch,
                                         images,
                                         markers,
+                                        input_shape,
                                         remove_similar_filters=remove_similar_filters,
                                         similarity_level=similarity_level)
 
@@ -271,7 +275,7 @@ class LCNCreator:
                       module_arch,
                       images=None,
                       markers=None,
-                      state_dict=None,
+                      input_shape=None,
                       remove_similar_filters=False,
                       similarity_level=0.85,
                       verbose=False):
@@ -313,62 +317,31 @@ class LCNCreator:
 
         if module_type == 'parallel':
             module = ParallelModule()
+            aggregate_fn = module_arch['aggregate']
         else:
             module = nn.Sequential()
         
         layers_arch = module_arch['layers']
 
-        output_shape = self._input_shape if images is None else np.array(images[0].shape)
-        last_conv_layer_out_channels = output_shape[-1] 
+        module_output_shape = None
 
         for key in layers_arch:
             new_module_name = key if module_name is None else f"{module_name}.{key}"
-
-            if new_module_name in self._skips:
-                inputs_names = self._skips[new_module_name]
-                images = np.concatenate([images, *[self._outputs[name] for name in inputs_names]], axis=-1)
-                output_shape = np.array(images[0].shape)
-                last_conv_layer_out_channels = output_shape[-1]
 
             layer_config = layers_arch[key]
             if verbose:
                 print(f"Building {key}")
         
             if "type" in layer_config:
-                _module, last_conv_layer_out_channels, images, markers = self._build_module(new_module_name,
+                _module, _layer_output_shape, images, markers = self._build_module(new_module_name,
                                                                            layer_config,
                                                                            images,
                                                                            markers,
-                                                                           state_dict,
+                                                                           input_shape,
                                                                            remove_similar_filters,
                                                                            similarity_level)
-                if module_type == 'parallel':
-                    module.append(_module)
-                else:
-                    module.add_module(key, _module)
 
-                    if images is not None and markers is not None:
-                        '''torch_images = torch.Tensor(images)
-
-                        torch_images = torch_images.permute(0, 3, 1, 2)
-                        
-                        input_size = torch_images.size(0)
-                        
-                        outputs = torch.Tensor([])
-                        _module = _module .to(self.device)
-                        
-                        for i in range(0, input_size, batch_size):
-                            batch = torch_images[i: i+batch_size]
-                            output = _module.forward(batch.to(device))
-                            output = output.detach().cpu()
-                            outputs = torch.cat((outputs, output))
-
-                        # last_conv_layer_out_channels = outputs.size(1)
-                        images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                        # output_shape = images.shape'''
-                        
-                        if new_module_name in self._to_save_outputs:
-                            self._outputs[new_module_name] = images
+                module.add_module(key, _module)
                         
             else:
         
@@ -379,82 +352,14 @@ class LCNCreator:
                 
                 if layer_config['operation'] == "conv2d" or layer_config['operation'] == 'conv3d':
 
-                    is_3d = layer_config['operation'] == "conv3d"
+                    layer = self._build_conv_layer(images,
+                                                markers,
+                                                remove_similar_filters,
+                                                similarity_level,
+                                                input_shape,
+                                                layer_config)
 
-                    number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", None)
-                    use_random_kernels = operation_params.get("use_random_kernels", False)
-                    use_pca = operation_params.get("use_pca", False)
-
-    
-                    kernel_size = operation_params['kernel_size']
-                    stride = operation_params.get('stride', 0)
-                    padding = operation_params.get('padding', 0)
-                    padding_mode = operation_params.get('padding_mode', 'zeros')
-                    dilation = operation_params.get('dilation', 0)
-                    groups = operation_params.get('groups', 1)
-                    bias = operation_params.get('bias', False)
-                
-                    out_channels = operation_params.get('out_channels', None)
-
-                    assert out_channels is not None or markers is not None,\
-                        "`out_channels` or `markers` must be defined."
-                    
-                    in_channels = last_conv_layer_out_channels
-                    if isinstance(dilation, int):
-                        dilation = [dilation] * (3 if is_3d else 2)
-
-                    if isinstance(padding, int):
-                        padding = [padding] * (3 if is_3d else 2)
-        
-
-                    if isinstance(kernel_size, int):
-                        kernel_size = [kernel_size] * (3 if is_3d else 2)
-
-                    if markers is not None and "number_of_kernels_per_marker" not in operation_params:
-                        number_of_kernels_per_marker = math.ceil(operation_params["out_channels"]/np.array(markers).max())
-
-
-                    default_std=self._default_std
-
-                    if (images is None or markers is None) and state_dict is not None:
-                        out_channels = state_dict[f'feature_extractor.{key}.weight'].size(0)
-
-                    if out_channels is not None:
-                        assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
-                            f"The number of kernels per marker is not enough to generate {out_channels} kernels."
-                    
-                    weights = _initialize_convNd_weights(images,
-                                                         markers,
-                                                         in_channels,
-                                                         out_channels=out_channels,
-                                                         kernel_size=kernel_size,
-                                                         dilation=dilation,
-                                                         number_of_kernels_per_marker=number_of_kernels_per_marker,
-                                                         use_random_kernels=use_random_kernels,
-                                                         default_std=default_std)
-                    if out_channels is not None:
-                        assert weights.shape[0] == out_channels, \
-                            f"Weights with {weights.shape} is not correct."
-                                                         
-                    if out_channels is None:
-                        out_channels = weights.shape[0]
-                    
-                    layer = operation(in_channels,
-                                      out_channels,
-                                      kernel_size,
-                                      stride,
-                                      padding,
-                                      dilation,
-                                      groups,
-                                      bias,
-                                      padding_mode)
-
-                    layer.weight = nn.Parameter(torch.from_numpy(weights))
-
-                    if remove_similar_filters:
-                        layer = _remove_similar_filters(layer, similarity_level)
-                        
-                    last_conv_layer_out_channels = layer.out_channels
+                    _layer_output_shape = [*input_shape[:2], layer.out_channels]
 
                 elif layer_config['operation'] in ['marker_based_norm', 'm_norm2d', 'm_norm3d']:
                     if layer_config['operation'] == 'marker_based_norm':
@@ -462,46 +367,15 @@ class LCNCreator:
                                       DeprecationWarning,
                                       stacklevel=2)
 
-                    is_3d = '3d' in layer_config['operation']
+                    layer = self._build_m_norm_layer(images, markers, input_shape, layer_config)
 
-                    if images is None or markers is None:
-                        mean = None
-                        std = None
-                        epsilon=0.001
-                    else:
-                        kernel_size = operation_params['kernel_size']
-                        dilation = operation_params.get('dilation', 0)
-                        epsilon = operation_params.get('epsilon', 0.001)
-                        in_channels = last_conv_layer_out_channels
-
-                        if isinstance(dilation, int):
-                            dilation = [dilation] * (3 if is_3d else 2)
-
-                        if isinstance(kernel_size, int):
-                            kernel_size = [kernel_size] * (3 if is_3d else 2)
-
-                        patches, _ = _generate_patches(images,
-                                                       markers,
-                                                       in_channels,
-                                                       kernel_size,
-                                                       dilation)
-
-                        if is_3d:
-                            axis = (0, 1, 2, 3)
-                        else:
-                            axis = (0, 1, 2)
-
-                        mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).flatten().float()
-                        std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).flatten().float()
-                    
-                    layer = operation(mean=mean,
-                                      std=std,
-                                      in_channels=last_conv_layer_out_channels,
-                                      epsilon=epsilon)
+                    _layer_output_shape = input_shape
 
                 elif layer_config['operation'] == "batch_norm2d" or layer_config['operation'] == "batch_norm3d":
-                    layer = operation(
-                        num_features=last_conv_layer_out_channels)
+                    operation_params = layer_config['params']
+                    operation_params['num_features'] = input_shape[-1]
+
+                    layer = operation(**operation_params)
                     layer.train()
                     layer = layer.to(device)
                     is_3d = "3d" in layer_config['operation']
@@ -524,103 +398,54 @@ class LCNCreator:
                 elif layer_config['operation'] == "max_pool2d" or layer_config['operation'] == "avg_pool2d" \
                     or layer_config['operation'] == "max_pool3d" or layer_config['operation'] == "avg_pool3d":
 
-                    f_operations = {
-                        "max_pool2d": F.max_pool2d,
-                        "max_pool3d": F.max_pool3d,
-                        "avg_pool2d": F.avg_pool2d,
-                        "avg_pool3d": F.avg_pool3d
-                    }
+                    layer = self._build_pool_layer(images, markers, batch_size, layer_config)
 
-                    f_pool = f_operations[layer_config['operation']]
-
+                    _layer_output_shape = [*input_shape]
                     is_3d = "3d" in layer_config['operation']
-
-                    stride = operation_params['stride']
-                    kernel_size = operation_params['kernel_size']
-                    
-                    if 'padding' in operation_params:
-                        padding = operation_params['padding']
-                        if isinstance(padding, int):
-                            padding = [padding] * (3 if is_3d else 2)
-                    else:
-                        padding = [0] * (3 if is_3d else 2)
-                    
-                    if isinstance(kernel_size, int):
-                        kernel_size = [kernel_size] * (3 if is_3d else 2)
-
-                    if output_shape.shape[0] > 1:
-                        end = 3 if is_3d else 2
-                        output_shape[:end] = np.floor((output_shape[:end] + 2*np.array(padding) - np.array(kernel_size))/stride + 1)
-                       
-                    operation_params['stride'] = 1
-                    operation_params['padding'] = [k_size//2 for k_size in kernel_size]
-                    
-                    #_layer = operation(**operation_params)
-
-                    if images is not None and markers is not None:    
-                        torch_images = torch.from_numpy(images)
-
-                        if is_3d:
-                            torch_images = torch_images.permute(0, 4, 3, 1, 2)
-                        else:
-                            torch_images = torch_images.permute(0, 3, 1, 2)
-                        
-                        input_shape = torch_images.shape
-                        input_size = input_shape[0]
-                        
-                        outputs = torch.Tensor([])
-
-                        # temporarly ignore warnings till pytorch is fixed
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            with torch.no_grad():
-                                for i in range(0, input_size, batch_size):
-                                    batch = torch_images[i: i+batch_size]
-                                    output = f_pool(batch, **operation_params)
-                                    output = output.detach().cpu()
-                                    outputs = torch.cat((outputs, output))
-
-                        if is_3d:
-                            images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3], :input_shape[3]]
-                        else: 
-                            images = outputs.permute(0, 2, 3, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3]]
-                    
-                    #if markers is not None:
-                    #    markers = _pooling_markers(markers, kernel_size, stride=stride, padding=padding)
-
-                    operation_params['stride'] = stride
-                    operation_params['padding'] = padding
-                    layer = operation(**operation_params)
+                    end = 3 if is_3d else 2
+                    spatial_size = np.array(input_shape[:end])
+                    kernel_size = np.array(layer.kernel_size)
+                    stride = np.array(layer.stride)
+                    padding = np.array(layer.padding)
+                    dilation = np.array(layer.dilation)
+                    _layer_output_shape[:end] = list(np.floor((spatial_size + 2*padding - dilation*(kernel_size-1))/stride + 1).astype(int))
                     
                 elif layer_config['operation'] == "adap_avg_pool2d" or layer_config['operation'] == "adap_avg_pool3d":
-                    if len(output_shape) > 1:
-                        output_shape = np.array(operation_params['output_size'])
+                    output_size = operation_params['output_size']
+                    if len(output_size) == 2:
+                         _layer_output_shape = np.array(output_size, input_shape[-1])
                     
                     layer = operation(**operation_params)
                     
                 elif layer_config['operation'] == "unfold":
-                    # TODO check if it works with 3D images
+                    # TODO support 3D images?
+                    kernel_size = operation_params['kernel_size']
+                    stride = operation_params.get('stride', 1)
+                    padding = operation_params.get('padding', 0)
+                    dilation = operation_params.get('dilation', 1)
+
+                    is_3d = len(input_shape) == 4
+
+                    if isinstance(kernel_size, int):
+                        kernel_size = np.array([kernel_size] * (3 if is_3d else 2))
+                    if isinstance(stride, int):
+                        stride = np.array([stride] * (3 if is_3d else 2))
+                    if isinstance(padding, int):
+                        padding = np.array([padding] * (3 if is_3d else 2))
+                    if isinstance(dilation, int):
+                        dilation = np.array([dilation] * (3 if is_3d else 2))
+
                     layer = operation(**operation_params)
+                    _layer_output_shape = [*input_shape]
+                    spatial_size = np.array(input_shape[:-1])
 
-                    torch_image = torch.from_numpy(images[0])
-                    torch_image = torch_image.unsqueeze(0)
-                    
+                    output_spatial_size = np.prod(np.floor((spatial_size + 2*padding - dilation*(kernel_size - 1) - 1)/stride + 1))
+
+                    _layer_output_shape[0] = output_spatial_size[0]
+                    _layer_output_shape[1] = output_spatial_size[1]
+
                     if is_3d:
-                        torch_images = torch_images.permute(0, 4, 3, 1, 2)
-                    else:
-                        torch_images = torch_images.permute(0, 3, 1, 2)
-                    torch_image = torch_image.to(device)
-
-                    layer.train()
-                    layer.to(device)
-
-                    output = layer(torch_image)
-                    if len(output_shape) > 1:
-                        output_shape[0] = 1
-                        output_shape[1] = 1
-                    output_shape[-1] = output.shape[1]
-
-                    last_conv_layer_out_channels = output.shape[1]
+                        _layer_output_shape[2] = output_spatial_size[2]
 
                 elif layer_config['operation'] == 'decoder':
                     if images.ndim > 4:
@@ -630,14 +455,9 @@ class LCNCreator:
 
                 elif layer_config['operation'] == 'linear':
                     if operation_params['in_features'] == -1:
-                        operation_params['in_features'] = np.prod(self._output_shape)
+                        operation_params['in_features'] = np.prod(input_shape)
                         _flatten_layer = nn.Flatten()
                         module.add_module("flatten", _flatten_layer)
-
-                    if state_dict is not None:
-                        weights = state_dict[f'classifier.{key}._linear.weight']
-                        operation_params['in_features'] = weights.shape[1]
-                        operation_params['out_features'] = weights.shape[0]
 
                     layer = operation(**operation_params)
                     #initialization
@@ -646,11 +466,13 @@ class LCNCreator:
                         nn.init.constant_(layer.bias, 0)
 
                     layer.to(device)
+                    _layer_output_shape = [*input_shape]
 
                 else:
                     layer = operation(**operation_params)
+                    _layer_output_shape = [*input_shape]
 
-                    
+              
                 if images is not None and markers is not None:    
                     torch_images = torch.Tensor(images)
                     is_3d = torch_images.ndim == 5
@@ -674,23 +496,221 @@ class LCNCreator:
                             images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()
                         else:
                             images = outputs.permute(0, 2, 3, 1).detach().numpy()
-                        # output_shape = list(images.shape)
 
-                        if new_module_name in self._to_save_outputs:
-                            self._outputs[new_module_name] = images
+                    _layer_output_shape = list(images.shape[1:])
                 layer.train()
                 module.add_module(key, layer)
 
-
-        output_shape[-1] = last_conv_layer_out_channels
+                if module_type == "sequential":
+                    module_output_shape = _layer_output_shape
+                    input_shape = _layer_output_shape
+                else:
+                    if aggregate_fn == "concat":
+                        if module_output_shape is None:
+                            module_output_shape = [*_layer_output_shape]
+                        else:
+                            module_output_shape[-1] += _layer_output_shape[-1]
+                    else:
+                        module_output_shape = _layer_output_shape
 
         if self._remove_border > 0:
-            if len(output_shape) > 1:
-                output_shape -= 2*self._remove_border
-
-        self._output_shape = output_shape
+            if len(module_output_shape) > 1:
+                module_output_shape[0] -= 2*self._remove_border
+                module_output_shape[1] -= 2*self._remove_border
+                if len(module_output_shape) > 2:
+                    module_output_shape[2] -= 2*self._remove_border
         
-        return module, last_conv_layer_out_channels, images, markers
+        return module, module_output_shape, images, markers
+
+    def _build_pool_layer(self, images, markers, batch_size, layer_config):
+        f_operations = {
+                        "max_pool2d": F.max_pool2d,
+                        "max_pool3d": F.max_pool3d,
+                        "avg_pool2d": F.avg_pool2d,
+                        "avg_pool3d": F.avg_pool3d
+                    }
+        operation_name = layer_config['operation']
+        operation_params = layer_config['params']
+        operation = __operations__[operation_name]
+        f_pool = f_operations[operation_name]
+
+        is_3d = "3d" in operation_name
+
+        stride = operation_params.get('stride', 1)
+        kernel_size = operation_params['kernel_size']
+                    
+        if 'padding' in operation_params:
+            padding = operation_params['padding']
+            if isinstance(padding, int):
+                padding = [padding] * (3 if is_3d else 2)
+        else:
+            padding = [0] * (3 if is_3d else 2)
+                    
+        if isinstance(kernel_size, int):
+            kernel_size = [kernel_size] * (3 if is_3d else 2)
+                       
+        operation_params['stride'] = 1
+        operation_params['padding'] = [k_size//2 for k_size in kernel_size]
+                    
+        if images is not None and markers is not None:    
+            torch_images = torch.from_numpy(images)
+
+            if is_3d:
+                torch_images = torch_images.permute(0, 4, 3, 1, 2)
+            else:
+                torch_images = torch_images.permute(0, 3, 1, 2)
+                        
+            input_shape = torch_images.shape
+            input_size = input_shape[0]
+                        
+            outputs = torch.Tensor([])
+
+            # temporarly ignore warnings till pytorch is fixed
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with torch.no_grad():
+                    for i in range(0, input_size, batch_size):
+                        batch = torch_images[i: i+batch_size]
+                        output = f_pool(batch, **operation_params)
+                        output = output.detach().cpu()
+                        outputs = torch.cat((outputs, output))
+
+            if is_3d:
+                images = outputs.permute(0, 3, 4, 2, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3], :input_shape[3]]
+            else: 
+                images = outputs.permute(0, 2, 3, 1).detach().numpy()[:, :, :input_shape[2], :input_shape[3]]
+
+        operation_params['stride'] = stride
+        operation_params['padding'] = padding
+        layer = operation(**operation_params)
+        return layer 
+
+    def _build_m_norm_layer(self, images, markers, input_shape, layer_config):
+        operation_name = layer_config['operation']
+        operation_params = layer_config['params']
+
+        operation = __operations__[operation_name]
+
+        is_3d = '3d' in layer_config['operation']
+
+        in_channels = input_shape[-1]
+        if images is None or markers is None:
+            mean = None
+            std = None
+            epsilon=0.001
+        else:
+            kernel_size = operation_params['kernel_size']
+            dilation = operation_params.get('dilation', 0)
+            epsilon = operation_params.get('epsilon', 0.001)
+
+            if isinstance(dilation, int):
+                dilation = [dilation] * (3 if is_3d else 2)
+
+            if isinstance(kernel_size, int):
+                kernel_size = [kernel_size] * (3 if is_3d else 2)
+
+            patches, _ = _generate_patches(images,
+                                        markers,
+                                        in_channels,
+                                        kernel_size,
+                                        dilation)
+
+            if is_3d:
+                axis = (0, 1, 2, 3)
+            else:
+                axis = (0, 1, 2)
+
+            mean = torch.from_numpy(patches.mean(axis=axis, keepdims=True)).flatten().float()
+            std = torch.from_numpy(patches.std(axis=axis, keepdims=True)).flatten().float()
+                    
+        layer = operation(mean=mean,
+                        std=std,
+                        in_channels=in_channels,
+                        epsilon=epsilon)
+
+        return layer
+
+    def _build_conv_layer(self,
+                        images,
+                        markers,
+                        remove_similar_filters,
+                        similarity_level,
+                        input_shape,
+                        layer_config):
+
+        operation_name = layer_config['operation']
+        operation_params = layer_config['params']
+        operation = __operations__[operation_name]
+        is_3d = operation_name == "conv3d"
+
+        number_of_kernels_per_marker = operation_params.get("number_of_kernels_per_marker", None)
+        use_random_kernels = operation_params.get("use_random_kernels", False)
+
+        kernel_size = operation_params['kernel_size']
+        stride = operation_params.get('stride', 1)
+        padding = operation_params.get('padding', 0)
+        padding_mode = operation_params.get('padding_mode', 'zeros')
+        dilation = operation_params.get('dilation', 1)
+        groups = operation_params.get('groups', 1)
+        bias = operation_params.get('bias', False)
+                
+        out_channels = operation_params.get('out_channels', None)
+
+        assert out_channels is not None or markers is not None,\
+                        "`out_channels` or `markers` must be defined."
+                    
+        in_channels = input_shape[-1]
+        if isinstance(dilation, int):
+            dilation = [dilation] * (3 if is_3d else 2)
+
+        if isinstance(padding, int):
+            padding = [padding] * (3 if is_3d else 2)
+        
+
+        if isinstance(kernel_size, int):
+            kernel_size = [kernel_size] * (3 if is_3d else 2)
+
+        if markers is not None and "number_of_kernels_per_marker" not in operation_params:
+            number_of_kernels_per_marker = math.ceil(operation_params["out_channels"]/np.array(markers).max())
+
+        default_std=self._default_std
+
+        if out_channels is not None:
+            assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
+                            f"The number of kernels per marker is not enough to generate {out_channels} kernels."
+                    
+        weights = _initialize_convNd_weights(images,
+                                            markers,
+                                            in_channels,
+                                            out_channels=out_channels,
+                                            kernel_size=kernel_size,
+                                            dilation=dilation,
+                                            number_of_kernels_per_marker=number_of_kernels_per_marker,
+                                            use_random_kernels=use_random_kernels,
+                                            default_std=default_std)
+        if out_channels is not None:
+            assert weights.shape[0] == out_channels, \
+                            f"Weights with {weights.shape} is not correct."
+                                                         
+        if out_channels is None:
+            out_channels = weights.shape[0]
+                    
+        layer = operation(in_channels,
+                                      out_channels,
+                                      kernel_size,
+                                      stride,
+                                      padding,
+                                      dilation,
+                                      groups,
+                                      bias,
+                                      padding_mode)
+
+        layer.weight = nn.Parameter(torch.from_numpy(weights))
+
+        if remove_similar_filters:
+            layer = _remove_similar_filters(layer, similarity_level)
+
+        return layer
 
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
