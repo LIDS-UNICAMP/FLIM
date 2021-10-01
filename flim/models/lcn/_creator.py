@@ -679,12 +679,13 @@ class LCNCreator:
             assert out_channels is not None or (number_of_kernels_per_marker * np.array(markers).max() >= out_channels), \
                             f"The number of kernels per marker is not enough to generate {out_channels} kernels."
                     
-        weights = _initialize_convNd_weights(images,
+        weights, bias_weights = _initialize_convNd_weights(images,
                                             markers,
                                             in_channels,
                                             out_channels=out_channels,
                                             kernel_size=kernel_size,
                                             dilation=dilation,
+                                            bias=bias,
                                             number_of_kernels_per_marker=number_of_kernels_per_marker,
                                             use_random_kernels=use_random_kernels,
                                             default_std=default_std)
@@ -696,16 +697,19 @@ class LCNCreator:
             out_channels = weights.shape[0]
                     
         layer = operation(in_channels,
-                                      out_channels,
-                                      kernel_size,
-                                      stride,
-                                      padding,
-                                      dilation,
-                                      groups,
-                                      bias,
-                                      padding_mode)
+                        out_channels,
+                        kernel_size,
+                        stride,
+                        padding,
+                        dilation,
+                        groups,
+                        bias,
+                        padding_mode)
 
         layer.weight = nn.Parameter(torch.from_numpy(weights))
+
+        if bias:
+            layer.bias = nn.Parameter(torch.from_numpy(bias_weights))
 
         if remove_similar_filters:
             layer = _remove_similar_filters(layer, similarity_level)
@@ -1013,7 +1017,8 @@ def _generate_patches(images,
 
 def _kmeans_roots(patches,
                   labels,
-                  n_clusters_per_label):
+                  n_clusters_per_label,
+                  compute_bias=False):
     """Cluster patch and return the root of each custer.
 
     Parameters
@@ -1024,6 +1029,8 @@ def _kmeans_roots(patches,
         The label of each patch with shape :nath:`(N,)`
     n_clusters_per_label : int
         The number os clusters per label.
+    compute_bias : bool, optional
+        If True, compute the bias of each cluster, by default False.
 
     Returns
     -------
@@ -1032,7 +1039,9 @@ def _kmeans_roots(patches,
 
     """
     roots = None
+    root_bias  = None
     min_number_of_pacthes_per_label = n_clusters_per_label
+    epsilon = 1e-3
 
     possible_labels = np.unique(labels)
     for label in possible_labels:
@@ -1045,24 +1054,44 @@ def _kmeans_roots(patches,
 
             kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
-            
             roots_of_label = kmeans.cluster_centers_
+
         # TODO is enough to check if is equal?
         else:
             roots_of_label = patches_of_label.reshape(
                 patches_of_label.shape[0], -1)
 
+        if compute_bias:
+            out_in = roots_of_label @ patches_of_label.reshape(patches_of_label.shape[0], -1).T
+            out_min = np.min(out_in, axis=1)
+            if (out_min < 0).any():
+                bias = -out_in.min(axis=1) + epsilon
+            else:
+                bias = np.zeros_like(out_min)
         
         if roots is not None:
             roots = np.concatenate((roots, roots_of_label))
+            if compute_bias:
+                root_bias = np.concatenate((root_bias, bias))
         else:
             roots = roots_of_label
+            if compute_bias:
+                root_bias = bias
     
     roots = roots.reshape(-1, *patches.shape[1:])
-    return roots
+    if compute_bias:
+        return roots, root_bias
+    else:
+        return roots
 
-
-def _calculate_convNd_weights(images, markers, in_channels, kernel_size, dilation, number_of_kernels_per_marker, default_std):
+def _calculate_convNd_weights(images,
+                            markers,
+                            in_channels,
+                            kernel_size,
+                            dilation,
+                            bias,
+                            number_of_kernels_per_marker,
+                            default_std):
         """Calculate kernels weights from image markers.
 
         Parameters
@@ -1074,8 +1103,7 @@ def _calculate_convNd_weights(images, markers, in_channels, kernel_size, dilatio
             :math:`3 \times N` where :math:`N` is the number of markers pixels.
             The first row is the markers pixels :math:`x`-coordinates, \
             second row is the markers pixels :math:`y`-coordinates, \
-            and the third row is the markers pixel labels.
-        updating : bool
+            and the third row is the markers pixel labels
 
         Returns
         -------
@@ -1091,23 +1119,40 @@ def _calculate_convNd_weights(images, markers, in_channels, kernel_size, dilatio
                                             dilation)
 
         axis = tuple(range(len(kernel_size)))
-        mean_by_channel = patches.mean(axis=axis, keepdims=True)
-        std_by_channel = patches.std(axis=axis, keepdims=True)
-            
-        patches = (patches - mean_by_channel)/(std_by_channel + default_std)
 
-        kernel_weights = _kmeans_roots(patches,
-                                       labels,
-                                       number_of_kernels_per_marker)
+        # TODO is it needed?
+        #mean_by_channel = patches.mean(axis=axis, keepdims=True)
+        #std_by_channel = patches.std(axis=axis, keepdims=True)
+        #    
+        #patches = (patches - mean_by_channel)/(std_by_channel + default_std)
 
-        kernels_shape = kernel_weights.shape
-        kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
-        norm = np.linalg.norm(kernel_weights, axis=1)
-        norm = np.expand_dims(norm, 1)
-        
-        kernel_weights = kernel_weights/(norm + 0.00001)
-        kernel_weights = kernel_weights.reshape(kernels_shape)
-        return kernel_weights
+        # force norm 1
+        patches_shape = patches.shape
+        patches = patches.reshape(patches_shape[0], -1)
+        patches = patches / (np.linalg.norm(patches, axis=1, keepdims=True) + 1e-6)
+        patches = patches.reshape(patches_shape)
+
+        weights = _kmeans_roots(patches,
+                                labels,
+                                number_of_kernels_per_marker,
+                                bias)
+        if bias:
+            kernel_weights, bias_weights = weights
+        else:
+            kernel_weights = weights
+
+        #kernels_shape = kernel_weights.shape
+        #kernel_weights = kernel_weights.reshape(kernels_shape[0], -1)
+        #norm = np.linalg.norm(kernel_weights, axis=1)
+        #norm = np.expand_dims(norm, 1)
+        #
+        #kernel_weights = kernel_weights/(norm + 0.00001)
+        #kernel_weights = kernel_weights.reshape(kernels_shape)
+
+        if bias:
+            return kernel_weights, bias_weights
+        else:
+            return kernel_weights
 
 
 def _initialize_convNd_weights(images=None,
@@ -1116,6 +1161,7 @@ def _initialize_convNd_weights(images=None,
                                out_channels=None,
                                kernel_size=None,
                                dilation=None,
+                               bias=False,
                                number_of_kernels_per_marker=16,
                                use_random_kernels=False,
                                default_std=0.1):
@@ -1138,6 +1184,9 @@ def _initialize_convNd_weights(images=None,
             this argument is ignored. 
 
         """
+
+        bias_weights = None
+
         if use_random_kernels:
             kernels_weights = _create_random_pca_kernels(n=out_channels * 10,
                                                          k=out_channels,
@@ -1145,13 +1194,20 @@ def _initialize_convNd_weights(images=None,
                                                          kernel_size=kernel_size)
             
         elif images is not None and markers is not None:
-            kernels_weights = _calculate_convNd_weights(images,
-                                                        markers,
-                                                        in_channels,
-                                                        kernel_size,
-                                                        dilation,
-                                                        number_of_kernels_per_marker,
-                                                        default_std=default_std)
+            weights = _calculate_convNd_weights(images,
+                                                markers,
+                                                in_channels,
+                                                kernel_size,
+                                                dilation,
+                                                bias,
+                                                number_of_kernels_per_marker,
+                                                default_std=default_std)
+
+            if bias:
+                kernels_weights, bias_weights = weights
+            else:
+                kernels_weights = weights
+
             if kernels_weights.ndim == 4:
                 kernels_weights = kernels_weights.transpose(0, 3, 1, 2)
             else:
@@ -1164,14 +1220,22 @@ def _initialize_convNd_weights(images=None,
                 kernels_weights = _select_kernels_with_pca(kernels_weights, out_channels)
         
             elif out_channels is not None and out_channels < kernels_weights.shape[0]:
-                kernels_weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), out_channels)
+                weights = _kmeans_roots(kernels_weights, np.ones(kernels_weights.shape[0]), out_channels, bias)
+
+                if bias:
+                    kernels_weights, bias_weights = weights
+                else:
+                    kernels_weights = weights
 
         else:
             kernels_weights = torch.rand(out_channels,
                                          in_channels,
                                          *kernel_size).numpy()
+            
+            bias_weights = np.zeros(out_channels)
 
-        return kernels_weights
+
+        return kernels_weights, bias_weights
 
 def _compute_similarity_matrix(filters):
     """Compute similarity matrix.

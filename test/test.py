@@ -18,7 +18,6 @@ else:
 
 class TestBuildSimpleModel(TestCase):
     def test_build_model(self):
-        print(path.dirname(__file__))
         arch = flim_utils.load_architecture(path.join(path.dirname(__file__), 'data', 'arch.json'))
 
         creator = LCNCreator(architecture=arch, input_shape=[3], device=device)
@@ -151,6 +150,45 @@ class TestParallelModule(TestCase):
         output = model(fake_input)
 
         self.assertEqual(output.shape, torch.Size([1, 16, 224, 224]))
+
+
+class TestConvWithBias(TestCase):
+    def test_conv_with_bias(self):
+        arch = {
+            "module": {
+                "type": "sequential",
+                "layers": {
+                    "conv": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 5,
+                            "stride": 1,
+                            "padding": 2,
+                            "dilation": 1,
+                            "out_channels": 64,
+                            "bias": True,
+                            "number_of_kernels_per_marker": 32
+                        }
+                    }
+                }
+            }
+        }
+
+        images, markers = flim_utils.load_images_and_markers(path.join(path.dirname(__file__), 'data', 'images_and_markers'))
+        creator = LCNCreator(architecture=arch,
+                            images=images,
+                            markers=markers,
+                            device=device,
+                            relabel_markers=False)
+
+        creator.build_model()
+        model = creator.get_LIDSConvNet().to(device)
+
+        torch_images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(device)
+        output = model(torch_images)
+
+        self.assertEqual(output.shape, torch.Size([1, 16, images.shape[1], images.shape[2]]))
+        self.assertIsNotNone(model.module.conv.bias)
 
 if __name__ == '__main__':
     unittest.main()

@@ -114,5 +114,3 @@ class ParallelModule(nn.ModuleList):
             outputs.append(module(x))
 
         return torch.cat(outputs, 1)
-
-
