@@ -1,0 +1,25 @@
+name: flim
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - pytorch=>1.9.1
+  - torchvision=>0.10.0
+  - pip:
+    - napari[pyqt5]
+    - numpy>=1.20
+    - setuptools
+    - scikit-image
+    - sklearn
+    - pylint
+    - pep8
+    - pyflakes
+    - mccabe
+    - pydocstyle
+    - flake8
+    - pylama
+    - termcolor 
+    - numba
+    - nibabel
+    - napari[pyqt5]
+    - magicgui
