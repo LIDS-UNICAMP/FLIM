@@ -166,8 +166,7 @@ class TestConvWithBias(TestCase):
                             "padding": 2,
                             "dilation": 1,
                             "out_channels": 64,
-                            "bias": True,
-                            "number_of_kernels_per_marker": 32
+                            "bias": True
                         }
                     }
                 }
@@ -187,7 +186,7 @@ class TestConvWithBias(TestCase):
         torch_images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(device)
         output = model(torch_images)
 
-        self.assertEqual(output.shape, torch.Size([1, 16, images.shape[1], images.shape[2]]))
+        self.assertEqual(output.shape, torch.Size([1, 64, images.shape[1], images.shape[2]]))
         self.assertIsNotNone(model.module.conv.bias)
 
 if __name__ == '__main__':

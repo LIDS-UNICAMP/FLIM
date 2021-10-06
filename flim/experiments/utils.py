@@ -110,7 +110,7 @@ def load_markers(markers_dir):
     else:
         image_shape = (label_infos[2], label_infos[1], label_infos[3])
     
-    markers = np.zeros(image_shape, dtype=np.int)
+    markers = np.zeros(image_shape, dtype=int)
 
     for line in lines[1:]:
         split_line = line.split(" ")
