@@ -3,8 +3,9 @@ channels:
   - pytorch
   - defaults
 dependencies:
-  - pytorch=>1.9.1
-  - torchvision=>0.10.0
+  - pytorch>=1.9.1
+  - torchvision>=0.10.0
+  - pip>=21.2.0
   - pip:
     - napari[pyqt5]
     - numpy>=1.20
