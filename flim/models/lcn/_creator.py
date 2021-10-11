@@ -1241,7 +1241,7 @@ def _calculate_convNd_weights(
 
 
 def _compute_kernels_with_backpropagation(
-    patches, num_kernels, epochs=30, lr=0.01, device="cpu"
+    patches, num_kernels, epochs=30, lr=0.0001, wd=0.9, device="cpu"
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
@@ -1261,7 +1261,7 @@ def _compute_kernels_with_backpropagation(
 
         lin_layer = nn.Linear(patches.shape[1], 1, bias=True).to(device)
 
-        optim = torch.optim.Adam(lin_layer.parameters(), lr=lr)
+        optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
 
         for epoch in range(epochs):
 
@@ -1269,12 +1269,11 @@ def _compute_kernels_with_backpropagation(
 
             loss = -(outputs[mask_in].sum() - outputs[mask_out].sum())
             print(f"epoch {epoch} loss {loss.item()}")
-            if loss < 0:
+            if outputs[mask_in].mean() > outputs[mask_out].mean():
                 break
             loss.backward()
             optim.step()
             lin_layer.zero_grad()
-
 
         kernels.append(lin_layer.weight.detach().cpu().numpy())
         bias.append(lin_layer.bias.detach().cpu().numpy())
