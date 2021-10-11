@@ -6,12 +6,12 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='FLIM',
-    version='0.1',
-    author='Italos Estilon de Souza',
-    author_email='italosestilon@gmail.com',
+    name="FLIM",
+    version="0.1",
+    author="Italos Estilon de Souza",
+    author_email="italosestilon@gmail.com",
     packages=setuptools.find_packages(),
-    description='A package to build deep learning models from images markers.',
+    description="A package to build deep learning models from images markers.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/LIDS-UNICAMP/FLIM",
@@ -25,7 +25,7 @@ setuptools.setup(
         "Natural Language :: English",
         "Topic :: Scientific/Engineering :: \
             Artificial Intelligence :: Image Recognition",
-        "Topic :: Software Development :: Libraries"
+        "Topic :: Software Development :: Libraries",
     ],
     install_requires=[
         "torch",
@@ -36,11 +36,14 @@ setuptools.setup(
         "setuptools",
         "numba",
         "termcolor",
-        "nibabel"
+        "nibabel",
     ],
-    python_requires='>=3.7',
-    entry_points={'console_scripts': ['train=flim.tools.training_tool:main',
-                                      'validate=flim.tools.validating_tool:main',
-                                      "annotation=flim.tools.annotation_tool:main"
-                                     ]}
+    python_requires=">=3.7",
+    entry_points={
+        "console_scripts": [
+            "train=flim.tools.training_tool:main",
+            "validate=flim.tools.validating_tool:main",
+            "annotation=flim.tools.annotation_tool:main",
+        ]
+    },
 )

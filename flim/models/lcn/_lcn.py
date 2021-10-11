@@ -9,6 +9,7 @@ from torch.nn.modules.fold import Unfold
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
 
+
 class LIDSConvNet(nn.Sequential):
 
     """A convolutional neural network.
@@ -29,11 +30,13 @@ class LIDSConvNet(nn.Sequential):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self._logger = logging.getLogger()
-        
+
         if remove_boder:
-            warnings.warn("remove_border is deprecated and it will be removed.",
+            warnings.warn(
+                "remove_border is deprecated and it will be removed.",
                 DeprecationWarning,
-                stacklevel=1)
+                stacklevel=1,
+            )
 
         self._skips = skips
         self._outputs_to_save = outputs_to_save
@@ -69,7 +72,7 @@ class LIDSConvNet(nn.Sequential):
                 y = y.permute(0, 2, 1)
 
             x = y
-    
+
         y = x
 
         return y
@@ -83,7 +86,7 @@ class ParallelModule(nn.ModuleList):
          is concatenated.
 
     """
-  
+
     def __init__(self):
         super(ParallelModule, self).__init__()
 
