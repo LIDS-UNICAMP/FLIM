@@ -408,7 +408,10 @@ class LCNCreator:
                     kernel_size = np.array(layer.kernel_size)
                     stride = np.array(layer.stride)
                     padding = np.array(layer.padding)
-                    dilation = np.array(layer.dilation)
+                    if "avg" in layer_config['operation']:
+                        dilation = np.array([1] * end)
+                    else:
+                        dilation = np.array(layer.dilation)
                     _layer_output_shape[:end] = list(np.floor((spatial_size + 2*padding - dilation*(kernel_size-1))/stride + 1).astype(int))
                     
                 elif layer_config['operation'] == "adap_avg_pool2d" or layer_config['operation'] == "adap_avg_pool3d":
