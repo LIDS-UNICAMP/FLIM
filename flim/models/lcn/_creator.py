@@ -1247,7 +1247,7 @@ def _compute_kernels_with_backpropagation(
     patches = patches.reshape(patches_shape[0], -1)
 
     # cluster patches
-    kmeans = KMeans(n_clusters=2, max_iter=100, tol=0.001)
+    kmeans = KMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
     kmeans.fit(patches)
     labels = kmeans.labels_
 
@@ -1269,7 +1269,7 @@ def _compute_kernels_with_backpropagation(
 
             loss = -(outputs[mask_in].sum() - outputs[mask_out].sum())
             print(f"epoch {epoch} loss {loss.item()}")
-            if outputs[mask_in].mean() > outputs[mask_out].mean():
+            if loss < 0:
                 break
             loss.backward()
             optim.step()
