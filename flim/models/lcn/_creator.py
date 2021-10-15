@@ -1241,7 +1241,7 @@ def _calculate_convNd_weights(
 
 
 def _compute_kernels_with_backpropagation(
-    patches, num_kernels, epochs=30, lr=0.0001, wd=0.9, device="cpu"
+    patches, num_kernels, epochs=50, lr=0.001, wd=0.9, device="cpu"
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
@@ -1251,35 +1251,32 @@ def _compute_kernels_with_backpropagation(
     kmeans.fit(patches)
     labels = kmeans.labels_
 
-    kernels = []
-    bias = []
+    lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
+    act_layer = nn.ReLU(True).to(device)
+    nn.init.xavier_uniform_(lin_layer.weight)
+    nn.init.constant_(lin_layer.bias, 0)
 
-    for i in range(num_kernels):
-        # get patches of label i
-        mask_in = labels == i
-        mask_out = labels != i
+    criterion = nn.CrossEntropyLoss()
 
-        lin_layer = nn.Linear(patches.shape[1], 1, bias=True).to(device)
+    inputs = torch.from_numpy(patches).float().to(device)
+    true_labels = torch.from_numpy(labels).long().to(device)
 
-        optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
+    optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
 
-        for epoch in range(epochs):
+    for epoch in range(epochs):
 
-            outputs = lin_layer(torch.from_numpy(patches).float().to(device))
+        outputs = act_layer(lin_layer(inputs))
 
-            loss = -(outputs[mask_in].sum() - outputs[mask_out].sum())
-            print(f"epoch {epoch} loss {loss.item()}")
-            if loss < 0:
-                break
-            loss.backward()
-            optim.step()
-            lin_layer.zero_grad()
+        loss = criterion(outputs, true_labels)
 
-        kernels.append(lin_layer.weight.detach().cpu().numpy())
-        bias.append(lin_layer.bias.detach().cpu().numpy())
+        # print(f"Epoch {epoch} loss {loss}")
+        lin_layer.zero_grad()
 
-    kernels = np.array(kernels)
-    bias = np.array(bias).squeeze()
+        loss.backward()
+        optim.step()
+
+    kernels = lin_layer.weight.detach().cpu().numpy()
+    bias = lin_layer.bias.detach().cpu().numpy()
 
     return kernels.reshape(-1, *patches_shape[1:]), bias
 
