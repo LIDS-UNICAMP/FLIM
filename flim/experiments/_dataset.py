@@ -47,7 +47,7 @@ class LIDSDataset(Dataset):
                 image = ift.ReadMImage(image_path).AsNumPy().squeeze()
             
             else:
-                image = io.imread(image_path)
+                image = ift.ReadImageByExt(image_path)
             
             if image.ndim == 2:
                 image = gray2rgb(image)
