@@ -88,7 +88,7 @@ class TestParallelModule(TestCase):
     _arch = {
         "module": {
             "type": "parallel",
-            "aggregate": "concat",
+            "params": {"aggregate": "concat"},
             "layers": {
                 "conv1": {
                     "operation": "conv2d",
@@ -125,7 +125,7 @@ class TestParallelModule(TestCase):
 
     def test_parallel_module_sum(self):
         arch = self._arch.copy()
-        arch["module"]["aggregate"] = "sum"
+        arch["module"]["params"]["aggregate"] = "sum"
         arch["module"]["layers"]["conv1"]["out_channels"] = 16
         arch["module"]["layers"]["conv2"]["out_channels"] = 16
         arch["module"]["layers"]["conv3"]["out_channels"] = 16
@@ -141,7 +141,7 @@ class TestParallelModule(TestCase):
 
     def test_parallel_module_prod(self):
         arch = self._arch.copy()
-        arch["module"]["aggregate"] = "prod"
+        arch["module"]["params"]["aggregate"] = "prod"
         arch["module"]["layers"]["conv1"]["out_channels"] = 16
         arch["module"]["layers"]["conv2"]["out_channels"] = 16
         arch["module"]["layers"]["conv3"]["out_channels"] = 16
@@ -161,6 +161,11 @@ class TestConvWithBias(TestCase):
         arch = {
             "module": {
                 "type": "sequential",
+                "flim_params": {
+                    "epochs": 30,
+                    "lr": 0.001,
+                    "wd": 0.9,
+                },
                 "layers": {
                     "conv": {
                         "operation": "conv2d",
