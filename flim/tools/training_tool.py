@@ -62,23 +62,24 @@ def _handle_train(args):
     if args.torchvision_model is None:
         architecture = utils.load_architecture(args.architecture_dir)
 
-        if "features" in architecture and args.dataset_dir.endswith(".zip"):
-            del architecture["features"]
-
     if not args.load_lids_model and not args.torchvision_model and args.markers_dir:
         images, markers = utils.load_images_and_markers(args.markers_dir)
     else:
         images, markers = None, None
 
-    transform = transforms.Compose([ToTensor()])
-    dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
+    if args.dataset_dir is not None:
+        transform = transforms.Compose([ToTensor()])
+        dataset = utils.configure_dataset(args.dataset_dir, args.train_split, transform)
 
-    _first_image = dataset[0][0]
+        _first_image = dataset[0][0]
 
-    if _first_image.ndim > 1:
-        input_shape = _first_image.permute(1, 2, 0).shape
+        if _first_image.ndim > 1:
+            input_shape = _first_image.permute(1, 2, 0).shape
+        else:
+            input_shape = _first_image.shape
     else:
-        input_shape = _first_image.shape
+        dataset = None
+        input_shape = None
 
     # print(input_shape)
 
@@ -257,7 +258,7 @@ def get_arguments():
     )
 
     parser_train.add_argument(
-        "-d", "--dataset-dir", help="Dataset to train the mlp.", required=True
+        "-d", "--dataset-dir", help="Dataset to train the mlp.", required=False
     )
 
     parser_train.add_argument("-ts", "--train-split", help="Split to train the mlp.")

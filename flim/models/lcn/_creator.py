@@ -334,9 +334,11 @@ class LCNCreator:
         # assume that module is sequential
         module_type = module_arch.get("type", "sequential")
 
+        module_params = module_arch.get("params", {})
+
         if module_type == "parallel":
             module = ParallelModule()
-            aggregate_fn = module_arch["aggregate"]
+            aggregate_fn = module_params["aggregate"]
         else:
             module = nn.Sequential()
 
@@ -375,6 +377,14 @@ class LCNCreator:
                     layer_config["operation"] == "conv2d"
                     or layer_config["operation"] == "conv3d"
                 ):
+                    # if bias then set training params
+                    if operation_params.get("bias", False) == True:
+                        if "epochs" not in operation_params:
+                            operation_params["epochs"] = module_params.get("epochs", 50)
+                        if "lr" not in operation_params:
+                            operation_params["lr"] = module_params.get("lr", 0.001)
+                        if "wd" not in operation_params:
+                            operation_params["wd"] = module_params.get("wd", 0.9)
 
                     layer = self._build_conv_layer(
                         images,
@@ -744,6 +754,11 @@ class LCNCreator:
 
         out_channels = operation_params.get("out_channels", None)
 
+        # training parameters
+        epochs = operation_params.get("epochs", 50)
+        lr = operation_params.get("lr", 0.001)
+        wd = operation_params.get("wd", 0.9)
+
         assert (
             out_channels is not None or markers is not None
         ), "`out_channels` or `markers` must be defined."
@@ -784,6 +799,10 @@ class LCNCreator:
             number_of_kernels_per_marker=number_of_kernels_per_marker,
             use_random_kernels=use_random_kernels,
             default_std=default_std,
+            epochs=epochs,
+            lr=lr,
+            wd=wd,
+            device=self.device,
         )
         if out_channels is not None:
             assert (
@@ -1188,6 +1207,10 @@ def _calculate_convNd_weights(
     bias,
     number_of_kernels_per_marker,
     default_std,
+    epochs,
+    lr,
+    wd,
+    device="cpu",
 ):
     """Calculate kernels weights from image markers.
 
@@ -1229,7 +1252,7 @@ def _calculate_convNd_weights(
 
     if bias:
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
-            patches, number_of_kernels_per_marker
+            patches, number_of_kernels_per_marker, epochs, lr, wd, device
         )
         return kernel_weights, bias_weights
 
@@ -1337,6 +1360,10 @@ def _initialize_convNd_weights(
     number_of_kernels_per_marker=16,
     use_random_kernels=False,
     default_std=0.1,
+    epochs=50,
+    lr=0.001,
+    wd=0.9,
+    device="cpu",
 ):
     """Learn kernel weights from image markers.
 
@@ -1384,6 +1411,10 @@ def _initialize_convNd_weights(
             bias,
             number_of_kernels_per_marker,
             default_std=default_std,
+            epochs=epochs,
+            lr=lr,
+            wd=wd,
+            device=device,
         )
         if bias:
             kernels_weights, bias_weights = weights
