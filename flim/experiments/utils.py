@@ -137,7 +137,7 @@ def load_markers(markers_dir):
     return markers
 
 
-def load_images_and_markers(path):
+def load_images_and_markers(path, normalize=True):
     dirs = os.listdir(path)
     images_names = [filename for filename in dirs if not filename.endswith(".txt")]
     makers_names = [filename for filename in dirs if filename.endswith(".txt")]
@@ -159,7 +159,12 @@ def load_images_and_markers(path):
         images.append(image)
         images_markers.append(markers)
 
-    return np.array(images), np.array(images_markers)
+    images = np.array(images)
+    if normalize:
+        images = images/images.max(axis=(3,2,1), keepdims=True)
+    images_markers = np.array(images_markers)
+
+    return images, images_markers
 
 
 def _convert_arch_from_lids_format(arch):
@@ -664,7 +669,7 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
 
     layer_specs = get_arch_in_lids_format(architecture, split)
     conv_count = 1
-    for _, layer in model.feature_extractor.named_children():
+    for _, layer in model.named_children():
         if isinstance(layer, SpecialConvLayer):
             weights = layer.conv.weight.detach().cpu()
 
@@ -901,7 +906,8 @@ def _find_elems_in_array(a, elems):
     return indices
 
 
-def select_images_to_put_markers(dataset, class_proportion=0.05):
+def select_images_to_put_markers(dataset, class_proportion=4, random=True):
+    print("Selecting images to put markers...")
     dataloader = DataLoader(dataset, batch_size=64, shuffle=False, drop_last=False)
 
     all_images = None
@@ -928,13 +934,23 @@ def select_images_to_put_markers(dataset, class_proportion=0.05):
 
     for label in possible_labels:
         images_of_label = all_images[all_labels == label]
-        n_clusters = max(1, math.floor(images_of_label.shape[0] * class_proportion))
-        kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
-        kmeans.fit(images_of_label)
+        if isinstance(class_proportion, float):
+            n_clusters = max(1, math.floor(images_of_label.shape[0] * class_proportion))
+        else:
+            n_clusters = class_proportion
+        print(n_clusters)
+        if random:
+            _indices = np.random.choice(
+                images_of_label.shape[0], n_clusters, replace=False
+            )
+            roots_of_label = images_of_label[_indices]
+        else:
+            kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
+            kmeans.fit(images_of_label)
 
-        roots_of_label = _images_close_to_center(
-            images_of_label, kmeans.cluster_centers_
-        )
+            roots_of_label = _images_close_to_center(
+                images_of_label, kmeans.cluster_centers_
+            )
 
         if roots is None:
             roots = roots_of_label
@@ -1217,7 +1233,9 @@ def get_arch_in_lids_format(architecture, split):
             params = layers[layer_names[i]]["params"]
             kernel_size = params["kernel_size"]
             dilation = params["kernel_size"]
-            number_of_kernels_per_markers = params["number_of_kernels_per_marker"]
+            number_of_kernels_per_markers = params.get(
+                "number_of_kernels_per_marker", 8
+            )
             out_channels = params["out_channels"]
 
             layer_spec["layer"] = conv_layers_count

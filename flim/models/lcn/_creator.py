@@ -823,11 +823,16 @@ class LCNCreator:
             bias,
             padding_mode,
         )
+        if images is not None and markers is not None:
+            layer.weight = nn.Parameter(torch.from_numpy(weights))
 
-        layer.weight = nn.Parameter(torch.from_numpy(weights))
+            if bias:
+                layer.bias = nn.Parameter(torch.from_numpy(bias_weights))
 
-        if bias:
-            layer.bias = nn.Parameter(torch.from_numpy(bias_weights))
+        else:
+            nn.init.xavier_normal_(layer.weight)
+            if bias:
+                nn.init.zeros_(layer.bias)
 
         if remove_similar_filters:
             layer = _remove_similar_filters(layer, similarity_level)
@@ -1254,13 +1259,22 @@ def _calculate_convNd_weights(
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
             patches, number_of_kernels_per_marker, epochs, lr, wd, device
         )
+
+    kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
+
+    # force norm 1
+    kernel_weights_shape = kernel_weights.shape
+    kernel_weights = kernel_weights.reshape(kernel_weights_shape[0], -1)
+    kernel_weights = kernel_weights / (
+        np.linalg.norm(kernel_weights, axis=1, keepdims=True) + 1e-6
+    )
+
+    kernel_weights = kernel_weights.reshape(kernel_weights_shape)
+
+    if bias:
         return kernel_weights, bias_weights
-
-    weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
-
-    kernel_weights = weights
-
-    return kernel_weights
+    else:
+        return kernel_weights
 
 
 def _compute_kernels_with_backpropagation(
