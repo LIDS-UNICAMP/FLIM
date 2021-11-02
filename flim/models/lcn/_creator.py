@@ -1250,17 +1250,17 @@ def _calculate_convNd_weights(
     # patches = (patches - mean_by_channel)/(std_by_channel + default_std)
 
     # force norm 1
-    patches_shape = patches.shape
-    patches = patches.reshape(patches_shape[0], -1)
-    patches = patches / (np.linalg.norm(patches, axis=1, keepdims=True) + 1e-6)
-    patches = patches.reshape(patches_shape)
+    # patches_shape = patches.shape
+    # patches = patches.reshape(patches_shape[0], -1)
+    # patches = patches / (np.linalg.norm(patches, axis=1, keepdims=True) + 1e-6)
+    # patches = patches.reshape(patches_shape)
 
     if bias:
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
             patches, number_of_kernels_per_marker, epochs, lr, wd, device
         )
-
-    kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
+    else:
+        kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
 
     # force norm 1
     kernel_weights_shape = kernel_weights.shape
