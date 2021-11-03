@@ -32,7 +32,7 @@ def get_device(gpus):
 
 
 def select_images_to_put_markers(
-    dataset_dir, split_path, markers_dir, class_proportion=0.05
+    dataset_dir, split_path, markers_dir, class_proportion=4, random=True
 ):
     transform = transforms.Compose([transforms.ToTensor()])
     dataset = utils.configure_dataset(dataset_dir, split_path, transform)
@@ -139,9 +139,9 @@ def _handle_train(args):
         utils.save_svm(svm, args.outputs_dir, args.svm_filename)
 
     utils.save_model(model, args.outputs_dir, args.model_filename)
-    utils.save_lids_model(
-        model, architecture, args.train_split, args.outputs_dir, args.model_filename
-    )
+    # utils.save_lids_model(
+    #    model, architecture, args.train_split, args.outputs_dir, args.model_filename
+    # )
 
     if args.intermediate:
         utils.save_intermediate_outputs(
@@ -158,7 +158,11 @@ def _handle_train(args):
 
 def _handle_select(args):
     select_images_to_put_markers(
-        args.dataset_dir, args.split, args.markers_dir, args.class_proportion
+        args.dataset_dir,
+        args.split,
+        args.markers_dir,
+        args.class_proportion,
+        args.random,
     )
 
 
@@ -412,8 +416,15 @@ def get_arguments():
         "-p",
         "--class-proportion",
         help="How many images of each class to select. Must be in range (0, 1].",
-        type=float,
-        default=0.5,
+        type=int,
+        default=3,
+    )
+
+    parser_select.add_argument(
+        "-r",
+        "--random",
+        help="Select images at random.",
+        action="store_true",
     )
 
     parser_select.set_defaults(func=_handle_select)
