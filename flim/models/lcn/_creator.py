@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 from skimage.util import view_as_windows
 
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
@@ -606,6 +606,7 @@ class LCNCreator:
         return module, module_output_shape, images, markers
 
     def _build_pool_layer(self, images, markers, batch_size, layer_config):
+        device = self.device
         f_operations = {
             "max_pool2d": F.max_pool2d,
             "max_pool3d": F.max_pool3d,
@@ -654,6 +655,7 @@ class LCNCreator:
                 with torch.no_grad():
                     for i in range(0, input_size, batch_size):
                         batch = torch_images[i : i + batch_size]
+                        batch = batch.to(device)
                         output = f_pool(batch, **operation_params)
                         output = output.detach().cpu()
                         outputs = torch.cat((outputs, output))
@@ -1185,7 +1187,9 @@ def _kmeans_roots(patches, labels, n_clusters_per_label):
             # kmeans = MiniBatchKMeans(
             #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
 
-            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
+            kmeans = MiniBatchKMeans(
+                n_clusters=n_clusters_per_label, max_iter=100, tol=0.001
+            )
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             roots_of_label = kmeans.cluster_centers_
 
@@ -1284,7 +1288,7 @@ def _compute_kernels_with_backpropagation(
     patches = patches.reshape(patches_shape[0], -1)
 
     # cluster patches
-    kmeans = KMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
+    kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
     kmeans.fit(patches)
     labels = kmeans.labels_
 
