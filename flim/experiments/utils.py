@@ -161,7 +161,7 @@ def load_images_and_markers(path, normalize=True):
 
     images = np.array(images)
     if normalize:
-        images = images/images.max(axis=(3,2,1), keepdims=True)
+        images = images / images.max(axis=(3, 2, 1), keepdims=True)
     images_markers = np.array(images_markers)
 
     return images, images_markers
@@ -908,43 +908,60 @@ def _find_elems_in_array(a, elems):
 
 def select_images_to_put_markers(dataset, class_proportion=4, random=True):
     print("Selecting images to put markers...")
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=False, drop_last=False)
+    if random:
+        _selected_images = []
+        images_names = np.array(dataset.images_names)
+        labels = np.array([int(name.split("_")[0]) for name in images_names])
 
-    all_images = None
-    all_labels = None
+        for label in np.unique(labels):
+            images_of_label = np.argwhere(labels == label).squeeze()
+            if isinstance(class_proportion, int):
+                n = class_proportion
+            else:
+                n = images_of_label.shape[0] * class_proportion
 
-    input_shape = dataset[0][0].shape
+            selected_of_label = np.random.choice(images_of_label, n, replace=False)
 
-    for images, labels in dataloader:
-        if all_images is None:
-            all_images = images
-            all_labels = labels
-        else:
-            all_images = torch.cat((all_images, images))
-            all_labels = torch.cat((all_labels, labels))
+            _selected_images.extend(selected_of_label)
+    
+        selected_images = np.array([dataset[i][0] for i in _selected_images])
+        images_names = [dataset.images_names[i] for i in _selected_images]
 
-    all_images = all_images.flatten(1).numpy()
-    all_labels = all_labels.numpy()
+    else:
+        dataloader = DataLoader(dataset, batch_size=64, shuffle=False, drop_last=False)
 
-    possible_labels = np.unique(all_labels)
+        all_images = None
+        all_labels = None
 
-    images_names = []
+        input_shape = dataset[0][0].shape
 
-    roots = None
+        for images, labels in dataloader:
+            if all_images is None:
+                all_images = images
+                all_labels = labels
+            else:
+                all_images = torch.cat((all_images, images))
+                all_labels = torch.cat((all_labels, labels))
 
-    for label in possible_labels:
-        images_of_label = all_images[all_labels == label]
-        if isinstance(class_proportion, float):
-            n_clusters = max(1, math.floor(images_of_label.shape[0] * class_proportion))
-        else:
-            n_clusters = class_proportion
-        print(n_clusters)
-        if random:
-            _indices = np.random.choice(
-                images_of_label.shape[0], n_clusters, replace=False
-            )
-            roots_of_label = images_of_label[_indices]
-        else:
+        all_images = all_images.flatten(1).numpy()
+        all_labels = all_labels.numpy()
+
+        possible_labels = np.unique(all_labels)
+
+        images_names = []
+
+        roots = None
+
+        for label in possible_labels:
+            images_of_label = all_images[all_labels == label]
+            if isinstance(class_proportion, float):
+                n_clusters = max(
+                    1, math.floor(images_of_label.shape[0] * class_proportion)
+                )
+            else:
+                n_clusters = class_proportion
+            print(n_clusters)
+
             kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
             kmeans.fit(images_of_label)
 
@@ -952,17 +969,19 @@ def select_images_to_put_markers(dataset, class_proportion=4, random=True):
                 images_of_label, kmeans.cluster_centers_
             )
 
-        if roots is None:
-            roots = roots_of_label
-        else:
-            roots = np.concatenate((roots, roots_of_label))
+            if roots is None:
+                roots = roots_of_label
+            else:
+                roots = np.concatenate((roots, roots_of_label))
 
-        indices = _find_elems_in_array(all_images, roots_of_label)
+            indices = _find_elems_in_array(all_images, roots_of_label)
 
-        for indice in indices:
-            images_names.append(dataset.images_names[indice])
+            for indice in indices:
+                images_names.append(dataset.images_names[indice])
 
-    return roots.reshape(-1, *input_shape), images_names
+            selected_images = roots.reshape(-1, *input_shape)
+
+    return selected_images, images_names
 
 
 def _label_of_image(image_name):

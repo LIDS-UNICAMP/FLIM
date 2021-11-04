@@ -34,10 +34,12 @@ def get_device(gpus):
 def select_images_to_put_markers(
     dataset_dir, split_path, markers_dir, class_proportion=4, random=True
 ):
-    transform = transforms.Compose([transforms.ToTensor()])
-    dataset = utils.configure_dataset(dataset_dir, split_path, transform)
+    # transform = transforms.Compose([transforms.ToTensor()])
+    dataset = utils.configure_dataset(dataset_dir, split_path)
 
-    _, images_names = utils.select_images_to_put_markers(dataset, class_proportion)
+    _, images_names = utils.select_images_to_put_markers(
+        dataset, class_proportion, random
+    )
 
     if not os.path.exists(markers_dir):
         os.makedirs(markers_dir)
@@ -161,7 +163,7 @@ def _handle_select(args):
         args.dataset_dir,
         args.split,
         args.markers_dir,
-        args.class_proportion,
+        args.n_images_per_class,
         args.random,
     )
 
@@ -413,9 +415,9 @@ def get_arguments():
     parser_select.add_argument("-s", "--split", help="Data set split.", required=True)
 
     parser_select.add_argument(
-        "-p",
-        "--class-proportion",
-        help="How many images of each class to select. Must be in range (0, 1].",
+        "-n",
+        "--n-images-per-class",
+        help="How many images of each class to select. Default is 3.",
         type=int,
         default=3,
     )
