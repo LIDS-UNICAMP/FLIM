@@ -1187,9 +1187,7 @@ def _kmeans_roots(patches, labels, n_clusters_per_label):
             # kmeans = MiniBatchKMeans(
             #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
 
-            kmeans = MiniBatchKMeans(
-                n_clusters=n_clusters_per_label, max_iter=100, tol=0.001
-            )
+            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             roots_of_label = kmeans.cluster_centers_
 
@@ -1261,7 +1259,14 @@ def _calculate_convNd_weights(
 
     if bias:
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
-            patches, number_of_kernels_per_marker, epochs, lr, wd, device
+            patches,
+            labels,
+            number_of_kernels_per_marker,
+            number_of_kernels_per_marker,
+            epochs,
+            lr,
+            wd,
+            device,
         )
     else:
         kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
@@ -1282,15 +1287,29 @@ def _calculate_convNd_weights(
 
 
 def _compute_kernels_with_backpropagation(
-    patches, num_kernels, epochs=50, lr=0.001, wd=0.9, device="cpu"
+    patches,
+    patches_labels,
+    num_kernels_per_marker,
+    num_kernels,
+    epochs=50,
+    lr=0.001,
+    wd=0.9,
+    device="cpu",
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
 
     # cluster patches
-    kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
-    kmeans.fit(patches)
-    labels = kmeans.labels_
+    cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
+    new_cluster_centers = _kmeans_roots(
+        cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
+    )
+
+    # compute distance between cluster centers and patches
+    distance_matrix = distance.cdist(patches, new_cluster_centers, metric="euclidean")
+    labels = np.argmin(distance_matrix, axis=1)
+    print(patches.shape)
+    print(labels.shape)
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
@@ -1310,7 +1329,7 @@ def _compute_kernels_with_backpropagation(
 
         loss = criterion(outputs, true_labels)
 
-        # print(f"Epoch {epoch} loss {loss}")
+        print(f"Epoch {epoch} loss {loss}")
         lin_layer.zero_grad()
 
         loss.backward()

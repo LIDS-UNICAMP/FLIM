@@ -992,7 +992,6 @@ def _label_of_image(image_name):
 
     return label
 
-
 def split_dataset(dataset_dir, train_size, val_size=0, test_size=None, stratify=True):
     if os.path.exists(os.path.join(dataset_dir, "files.txt")):
         with open(os.path.join(dataset_dir, "files.txt"), "r") as f:
