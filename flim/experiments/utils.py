@@ -734,6 +734,7 @@ def _calulate_metrics(true_labels, pred_labels):
     )
     cm = confusion_matrix(true_labels, pred_labels)
     cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+    kappa = cohen_kappa_score(true_labels, pred_labels)
 
     print("#" * 50)
     print(
@@ -755,10 +756,12 @@ def _calulate_metrics(true_labels, pred_labels):
     print("W-Recall:", recall_w)
     print("W-F-score:", f_score_w)
     print("-" * 50)
-    print("Kappa {}".format(cohen_kappa_score(true_labels, pred_labels)))
+    print("Kappa {}".format(kappa))
     print("-" * 50)
     print("Suport", *support)
     print("#" * 50)
+
+    return acc, precision, recall, f_score, precision_w, recall_w, f_score_w, kappa
 
 
 def validate_model(
@@ -827,7 +830,7 @@ def train_svm(
         inputs, labels = inputs.to(device), labels.to(device)
         outputs = model(inputs).detach()
         features = torch.cat((features, outputs.cpu()))
-        y = torch.cat((y, labels.cpu()))
+        y = torch.cat((y, labels.cpu().long()))
 
     print("Fitting SVM...")
     clf.fit(features.flatten(start_dim=1), y)

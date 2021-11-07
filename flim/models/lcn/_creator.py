@@ -808,8 +808,12 @@ class LCNCreator:
         )
         if out_channels is not None:
             assert (
-                weights.shape[0] == out_channels
-            ), f"Weights with {weights.shape} is not correct."
+                weights.shape[0] >= out_channels
+            ), f"Expected {out_channels} kernels and found {weights.shape[0]} kernels."
+            if weights.shape[0] < out_channels:
+                warnings.warn(
+                    f"It was not possible to create {out_channels} kernels. It was created only {weights.shape[0]}."
+                )
 
         if out_channels is None:
             out_channels = weights.shape[0]
@@ -1019,14 +1023,14 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
 def _select_kernels_with_pca(kernels, k):
     kernels_shape = kernels.shape
 
-    kernels_flatted = kernels.reshape(kernels_shape[0], -1)
+    kernels_flatted = kernels.reshape(kernels_shape[0], -1).T
     if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
         k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
 
     pca = PCA(n_components=k)
     pca.fit(kernels_flatted)
 
-    kernels_pca = pca.components_
+    kernels_pca = pca.components_ @ kernels_flatted.T
 
     kernels_pca = kernels_pca.reshape(-1, *kernels_shape[1:])
 
@@ -1187,9 +1191,7 @@ def _kmeans_roots(patches, labels, n_clusters_per_label):
             # kmeans = MiniBatchKMeans(
             #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
 
-            kmeans = MiniBatchKMeans(
-                n_clusters=n_clusters_per_label, max_iter=100, tol=0.001
-            )
+            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             roots_of_label = kmeans.cluster_centers_
 
@@ -1445,21 +1447,21 @@ def _initialize_convNd_weights(
             kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
 
         assert (
-            out_channels is None or kernels_weights.shape[0] >= out_channels
+            out_channels is None or kernels_weights.shape[0] > out_channels
         ), "Not enough kernels were generated!!!"
 
         if not bias:
-            if (
-                out_channels is not None
-                and out_channels < kernels_weights.shape[0]
-                and np.prod(kernels_weights.shape[1:]) > out_channels
+            if (out_channels is not None) and (
+                np.prod(kernels_weights.shape[1:]) < kernels_weights.shape[0]
             ):
                 kernels_weights = _select_kernels_with_pca(
                     kernels_weights, out_channels
                 )
 
-            elif out_channels is not None and out_channels < kernels_weights.shape[0]:
-                weights = _kmeans_roots(
+            elif (out_channels is not None) and (
+                out_channels < kernels_weights.shape[0]
+            ):
+                kernels_weights = _kmeans_roots(
                     kernels_weights, np.ones(kernels_weights.shape[0]), out_channels
                 )
 
