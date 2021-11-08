@@ -1,6 +1,7 @@
 import warnings
 import os
 from PIL import Image
+from ._image_utils import load_image
 
 from torch.utils.data import Dataset
 
@@ -44,22 +45,7 @@ class LIDSDataset(Dataset):
         if self.opf_data is None:
             image_path = os.path.join(self.root_dir, self.images_names[idx])
 
-            if image_path.endswith("mimg"):
-                image = ift.ReadMImage(image_path).AsNumPy().squeeze()
-
-            else:
-                image = io.imread(image_path)
-
-            if image.ndim == 2:
-                image = gray2rgb(image)
-
-            elif image.shape[2] == 4:
-                image = rgba2rgb(image)
-
-            image = rgb2lab(image)
-            # image = image/(np.array([[116], [500], [200]])).reshape(1, 1, 3)
-
-            image = image.astype(np.float32)
+            image = load_image(image_path)
 
             label = self._label_of_image(self.images_names[idx])
 
@@ -139,14 +125,14 @@ class ToTensor(object):
     def __call__(self, sample):
         image = np.array(sample)
 
-        min = image.min()
-        max = image.max()
-        image = (image) / (max)
+        # min = image.min()
+        # max = image.max()
+        # image = (image) / (max)
 
         if image.ndim > 2:
             image = image.transpose((2, 0, 1))
 
-        return torch.from_numpy(image.copy())
+        return torch.from_numpy(image.copy()).float()
 
 
 class ToLAB(object):

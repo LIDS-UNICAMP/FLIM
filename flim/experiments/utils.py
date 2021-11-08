@@ -4,8 +4,6 @@ from logging import root
 import os
 import warnings
 
-from skimage.color import rgb2lab, gray2rgb, rgba2rgb
-from skimage.util import img_as_float
 
 import numpy as np
 import numpy.typing as npt
@@ -48,11 +46,9 @@ from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSC
 
 from ._dataset import LIDSDataset
 
-from PIL import Image
-
-import nibabel as nib
-
 import re
+
+from ._image_utils import *
 
 ift = None
 
@@ -60,47 +56,6 @@ try:
     import pyift.pyift as ift
 except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
-
-
-def load_image(path: str, lab: bool = True) -> np.ndarray:
-    if path.endswith(".mimg"):
-        image = load_mimage(path)
-    elif path.endswith(".nii.gz") or path.endswith(".nii.gz"):
-        image = np.asanyarray(nib.load(path).dataobj)
-    else:
-        image = np.asarray(Image.open(path))
-
-    if lab:
-        if image.ndim == 3 and image.shape[-1] == 4:
-            image = rgba2rgb(image)
-        elif image.ndim == 2 or image.shape[-1] == 1:
-            image = gray2rgb(image)
-        elif image.ndim == 3 and image.shape[-1] > 4:
-            image = gray2rgb(image)
-        elif image.ndim == 4 and image.shape[-1] == 4:
-            image = rgba2rgb(image)
-
-        image = rgb2lab(image)
-
-    if image.dtype != float:
-        image = img_as_float(image)
-
-    return image
-
-
-def image_to_rgb(image):
-    warnings.warn(
-        "'image_to_rgb' will be remove due to its misleading name. "
-        + "Use 'from_lab_to_rgb' instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return from_lab_to_rgb(image)
-
-
-def from_lab_to_rgb(image):
-    image = lab2rgb(image)
-    return image
 
 
 def load_markers(markers_dir):
@@ -160,8 +115,8 @@ def load_images_and_markers(path, normalize=True):
         images_markers.append(markers)
 
     images = np.array(images)
-    if normalize:
-        images = images / images.max(axis=(3, 2, 1), keepdims=True)
+    # if normalize:
+    #    images = images / images.max(axis=(3, 2, 1), keepdims=True)
     images_markers = np.array(images_markers)
 
     return images, images_markers
@@ -926,7 +881,7 @@ def select_images_to_put_markers(dataset, class_proportion=4, random=True):
             selected_of_label = np.random.choice(images_of_label, n, replace=False)
 
             _selected_images.extend(selected_of_label)
-    
+
         selected_images = np.array([dataset[i][0] for i in _selected_images])
         images_names = [dataset.images_names[i] for i in _selected_images]
 
@@ -1089,21 +1044,6 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
     cam = cam - cam.min()
     cam = cam / cam.max()
     return cam.cpu().numpy()
-
-
-def load_mimage(path):
-    assert ift is not None, "PyIFT is not available"
-
-    mimge = ift.ReadMImage(path)
-
-    return mimge.AsNumPy().squeeze()
-
-
-def save_mimage(path, image):
-    assert ift is not None, "PyIFT is not available"
-
-    mimage = ift.CreateMImageFromNumPy(np.ascontiguousarray(image))
-    ift.WriteMImage(mimage, path)
 
 
 def save_opf_dataset(path, opf_dataset):
