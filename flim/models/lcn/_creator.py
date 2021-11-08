@@ -24,6 +24,8 @@ from ._decoder import Decoder
 
 from ...utils import label_connected_components
 
+from ..._constants import DIVISION_EPSILON
+
 __all__ = ["LCNCreator"]
 
 # TODO I think adaptative pooling 2D is missing
@@ -81,7 +83,7 @@ class LCNCreator:
         device="cpu",
         superpixels_markers=None,
         remove_border=0,
-        default_std=1e-6,
+        random_state=None,
     ):
         """Initialize the class.
 
@@ -144,7 +146,7 @@ class LCNCreator:
 
         self._remove_border = remove_border
 
-        self._default_std = default_std
+        self.random_state = random_state
 
         self._outputs = dict()
 
@@ -692,8 +694,8 @@ class LCNCreator:
             std = None
             epsilon = 0.001
         else:
-            kernel_size = operation_params["kernel_size"]
-            dilation = operation_params.get("dilation", 0)
+            kernel_size = 1
+            dilation = 1
             epsilon = operation_params.get("epsilon", 0.001)
 
             if isinstance(dilation, int):
@@ -783,8 +785,6 @@ class LCNCreator:
                 operation_params["out_channels"] / np.array(markers).max()
             )
 
-        default_std = self._default_std
-
         if out_channels is not None:
             assert out_channels is not None or (
                 number_of_kernels_per_marker * np.array(markers).max() >= out_channels
@@ -800,7 +800,6 @@ class LCNCreator:
             bias=bias,
             number_of_kernels_per_marker=number_of_kernels_per_marker,
             use_random_kernels=use_random_kernels,
-            default_std=default_std,
             epochs=epochs,
             lr=lr,
             wd=wd,
@@ -1023,15 +1022,14 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
 def _select_kernels_with_pca(kernels, k):
     kernels_shape = kernels.shape
 
-    kernels_flatted = kernels.reshape(kernels_shape[0], -1).T
+    kernels_flatted = kernels.reshape(kernels_shape[0], -1)
     if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
         k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
 
     pca = PCA(n_components=k)
     pca.fit(kernels_flatted)
 
-    kernels_pca = pca.components_ @ kernels_flatted.T
-
+    kernels_pca = pca.components_
     kernels_pca = kernels_pca.reshape(-1, *kernels_shape[1:])
 
     return kernels_pca
@@ -1154,10 +1152,22 @@ def _generate_patches(images, markers, in_channels, kernel_size, dilation):
             all_patches = np.concatenate((all_patches, generated_patches))
             all_labels = np.concatenate((all_labels, labels))
 
-    return all_patches.squeeze(), all_labels
+    return all_patches, all_labels
 
 
-def _kmeans_roots(patches, labels, n_clusters_per_label):
+def _points_closest_to_centers(points, centers):
+    _points = []
+    for center in centers:
+        _center = np.expand_dims(center, 0)
+
+        dist = distance.cdist(points, _center)
+
+        _points.append(points[np.argmin(dist)])
+
+    return np.array(_points)
+
+
+def _kmeans_roots(patches, labels, n_clusters_per_label, random_state=None):
     """Cluster patch and return the root of each custer.
 
     Parameters
@@ -1178,9 +1188,7 @@ def _kmeans_roots(patches, labels, n_clusters_per_label):
 
     """
     roots = None
-    root_bias = None
     min_number_of_pacthes_per_label = n_clusters_per_label
-    epsilon = 1e-3
 
     possible_labels = np.unique(labels)
     for label in possible_labels:
@@ -1191,9 +1199,18 @@ def _kmeans_roots(patches, labels, n_clusters_per_label):
             # kmeans = MiniBatchKMeans(
             #    n_clusters=n_clusters_per_label, max_iter=300, random_state=42, init_size=3 * n_clusters_per_label)
 
-            kmeans = KMeans(n_clusters=n_clusters_per_label, max_iter=100, tol=0.001)
+            kmeans = KMeans(
+                n_clusters=n_clusters_per_label,
+                max_iter=100,
+                tol=0.001,
+                random_state=42,
+            )
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
-            roots_of_label = kmeans.cluster_centers_
+            centers = kmeans.cluster_centers_
+            # roots_of_label = _points_closest_to_centers(
+            #    patches_of_label.reshape(patches_of_label.shape[0], -1), centers
+            # )
+            roots_of_label = centers
 
         # TODO is enough to check if is equal?
         else:
@@ -1217,7 +1234,6 @@ def _calculate_convNd_weights(
     dilation,
     bias,
     number_of_kernels_per_marker,
-    default_std,
     epochs,
     lr,
     wd,
@@ -1247,7 +1263,7 @@ def _calculate_convNd_weights(
         images, markers, in_channels, kernel_size, dilation
     )
 
-    axis = tuple(range(len(kernel_size)))
+    axis = tuple(range(len(kernel_size) + 1))
 
     # TODO is it needed?
     # mean_by_channel = patches.mean(axis=axis, keepdims=True)
@@ -1272,7 +1288,7 @@ def _calculate_convNd_weights(
     kernel_weights_shape = kernel_weights.shape
     kernel_weights = kernel_weights.reshape(kernel_weights_shape[0], -1)
     kernel_weights = kernel_weights / (
-        np.linalg.norm(kernel_weights, axis=1, keepdims=True) + 1e-6
+        np.linalg.norm(kernel_weights, axis=1, keepdims=True) + DIVISION_EPSILON
     )
 
     kernel_weights = kernel_weights.reshape(kernel_weights_shape)
@@ -1379,7 +1395,6 @@ def _initialize_convNd_weights(
     bias=False,
     number_of_kernels_per_marker=16,
     use_random_kernels=False,
-    default_std=0.1,
     epochs=50,
     lr=0.001,
     wd=0.9,
@@ -1430,7 +1445,6 @@ def _initialize_convNd_weights(
             dilation,
             bias,
             number_of_kernels_per_marker,
-            default_std=default_std,
             epochs=epochs,
             lr=lr,
             wd=wd,
