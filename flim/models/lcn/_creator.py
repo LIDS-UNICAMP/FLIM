@@ -52,6 +52,32 @@ __operations__ = {
 }
 
 
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, classes, smoothing=0.0, dim=-1, weight=None):
+        """if smoothing == 0, it's one-hot method
+        if 0 < smoothing < 1, it's smooth method
+        """
+        super(LabelSmoothingLoss, self).__init__()
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+        self.weight = weight
+        self.cls = classes
+        self.dim = dim
+
+    def forward(self, pred, target):
+        assert 0 <= self.smoothing < 1
+        pred = pred.log_softmax(dim=self.dim)
+
+        if self.weight is not None:
+            pred = pred * self.weight.unsqueeze(0)
+
+        with torch.no_grad():
+            true_dist = torch.zeros_like(pred)
+            true_dist.fill_(self.smoothing / (self.cls - 1))
+            true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+        return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
+
+
 class LCNCreator:
 
     """Class to build and a LIDSConvNet.
@@ -1234,6 +1260,7 @@ def _calculate_convNd_weights(
     dilation,
     bias,
     number_of_kernels_per_marker,
+    num_kernels,
     epochs,
     lr,
     wd,
@@ -1279,7 +1306,14 @@ def _calculate_convNd_weights(
 
     if bias:
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
-            patches, number_of_kernels_per_marker, epochs, lr, wd, device
+            patches,
+            labels,
+            number_of_kernels_per_marker,
+            num_kernels,
+            epochs,
+            lr,
+            wd,
+            device,
         )
     else:
         kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
@@ -1300,22 +1334,48 @@ def _calculate_convNd_weights(
 
 
 def _compute_kernels_with_backpropagation(
-    patches, num_kernels, epochs=50, lr=0.001, wd=0.9, device="cpu"
+    patches,
+    patches_labels,
+    num_kernels_per_marker,
+    num_kernels,
+    epochs=50,
+    lr=0.001,
+    wd=0.9,
+    device="cpu",
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
+    batch_size = 512
+    # cluster patches
+    # kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
+    # kmeans.fit(patches)
+    # labels = kmeans.labels_
 
     # cluster patches
-    kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
-    kmeans.fit(patches)
-    labels = kmeans.labels_
+    cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
+    new_cluster_centers = _kmeans_roots(
+        cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
+    )
+
+    # compute distance between cluster centers and patches
+    distance_matrix = distance.cdist(patches, new_cluster_centers, metric="euclidean")
+    labels = np.argmin(distance_matrix, axis=1)
+
+    # force norm 1
+    new_cluster_centers = new_cluster_centers / (
+        np.linalg.norm(new_cluster_centers, axis=1, keepdims=True) + DIVISION_EPSILON
+    )
+
+    # print(patches.shape)
+    # print(labels.shape)
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    nn.init.xavier_uniform_(lin_layer.weight)
+    # nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    lin_layer.weight.data = torch.from_numpy(new_cluster_centers).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = LabelSmoothingLoss(num_kernels, smoothing=0.1)
 
     inputs = torch.from_numpy(patches).float().to(device)
     true_labels = torch.from_numpy(labels).long().to(device)
@@ -1323,16 +1383,35 @@ def _compute_kernels_with_backpropagation(
     optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
 
     for epoch in range(epochs):
+        indices = torch.randperm(inputs.shape[0])
+        loss_epoch = 0.0
+        all_preds = []
+        all_true_labels = []
+        for i in range(0, inputs.shape[0], batch_size):
+            batch_indices = indices[i : i + batch_size]
+            batch_inputs = inputs[batch_indices]
+            batch_labels = true_labels[batch_indices]
 
-        outputs = act_layer(lin_layer(inputs))
+            optim.zero_grad()
+            outputs = act_layer(lin_layer(batch_inputs))
+            loss = criterion(outputs, batch_labels)
+            loss.backward()
+            preds = torch.argmax(outputs, dim=1)
 
-        loss = criterion(outputs, true_labels)
+            # gradient clip
+            nn.utils.clip_grad_norm_(lin_layer.parameters(), 0.1)
+            optim.step()
 
-        # print(f"Epoch {epoch} loss {loss}")
-        lin_layer.zero_grad()
+            all_preds.append(preds.detach().cpu().numpy())
+            all_true_labels.append(batch_labels.detach().cpu().numpy())
 
-        loss.backward()
-        optim.step()
+            loss_epoch += loss.item()
+        all_preds = np.concatenate(all_preds)
+        all_true_labels = np.concatenate(all_true_labels)
+        acc = np.mean(all_preds == all_true_labels)
+        print("Epoch {}: loss = {}, accuracy = {}".format(epoch, loss_epoch, acc))
+        if loss_epoch < 0.01:
+            break
 
     kernels = lin_layer.weight.detach().cpu().numpy()
     bias = lin_layer.bias.detach().cpu().numpy()
@@ -1445,6 +1524,7 @@ def _initialize_convNd_weights(
             dilation,
             bias,
             number_of_kernels_per_marker,
+            out_channels,
             epochs=epochs,
             lr=lr,
             wd=wd,
@@ -1461,7 +1541,7 @@ def _initialize_convNd_weights(
             kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
 
         assert (
-            out_channels is None or kernels_weights.shape[0] > out_channels
+            out_channels is None or kernels_weights.shape[0] >= out_channels
         ), "Not enough kernels were generated!!!"
 
         if not bias:
