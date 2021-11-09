@@ -1461,7 +1461,7 @@ def _initialize_convNd_weights(
             kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
 
         assert (
-            out_channels is None or kernels_weights.shape[0] > out_channels
+            out_channels is None or kernels_weights.shape[0] >= out_channels
         ), "Not enough kernels were generated!!!"
 
         if not bias:
