@@ -17,6 +17,7 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.spatial import distance
 
 import numpy as np
+from torch.nn.modules.loss import CrossEntropyLoss
 
 from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
@@ -1358,7 +1359,7 @@ def _compute_kernels_with_backpropagation(
     )
 
     # compute distance between cluster centers and patches
-    distance_matrix = distance.cdist(patches, new_cluster_centers, metric="euclidean")
+    distance_matrix = distance.cdist(patches, new_cluster_centers, metric="cosine")
     labels = np.argmin(distance_matrix, axis=1)
 
     # force norm 1
@@ -1371,11 +1372,11 @@ def _compute_kernels_with_backpropagation(
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    # nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
-    lin_layer.weight.data = torch.from_numpy(new_cluster_centers).to(device)
+    nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    # lin_layer.weight.data = torch.from_numpy(new_cluster_centers).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
-    criterion = LabelSmoothingLoss(num_kernels, smoothing=0.1)
+    criterion = CrossEntropyLoss()
 
     inputs = torch.from_numpy(patches).float().to(device)
     true_labels = torch.from_numpy(labels).long().to(device)
@@ -1383,33 +1384,23 @@ def _compute_kernels_with_backpropagation(
     optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
 
     for epoch in range(epochs):
-        indices = torch.randperm(inputs.shape[0])
         loss_epoch = 0.0
-        all_preds = []
-        all_true_labels = []
-        for i in range(0, inputs.shape[0], batch_size):
-            batch_indices = indices[i : i + batch_size]
-            batch_inputs = inputs[batch_indices]
-            batch_labels = true_labels[batch_indices]
 
-            optim.zero_grad()
-            outputs = act_layer(lin_layer(batch_inputs))
-            loss = criterion(outputs, batch_labels)
-            loss.backward()
-            preds = torch.argmax(outputs, dim=1)
+        optim.zero_grad()
+        outputs = act_layer(lin_layer(inputs))
+        loss = criterion(outputs, true_labels)
+        loss.backward()
+        preds = torch.argmax(outputs, dim=1)
 
-            # gradient clip
-            nn.utils.clip_grad_norm_(lin_layer.parameters(), 0.1)
-            optim.step()
+        # gradient clip
+        # nn.utils.clip_grad_norm_(lin_layer.parameters(), 0.1)
+        optim.step()
 
-            all_preds.append(preds.detach().cpu().numpy())
-            all_true_labels.append(batch_labels.detach().cpu().numpy())
+        loss_epoch = loss.item()
 
-            loss_epoch += loss.item()
-        all_preds = np.concatenate(all_preds)
-        all_true_labels = np.concatenate(all_true_labels)
-        acc = np.mean(all_preds == all_true_labels)
+        acc = np.mean(preds.detach().cpu().numpy() == labels)
         print("Epoch {}: loss = {}, accuracy = {}".format(epoch, loss_epoch, acc))
+
         if loss_epoch < 0.01:
             break
 
