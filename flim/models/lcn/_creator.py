@@ -1385,7 +1385,7 @@ def _compute_kernels_with_backpropagation(
     true_labels = torch.from_numpy(labels).long().to(device)
 
     optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
-
+    print("Building layer...")
     for epoch in range(epochs):
         loss_epoch = 0.0
 
@@ -1523,7 +1523,7 @@ def _initialize_convNd_weights(
             epochs=epochs,
             lr=lr,
             wd=wd,
-            multilevel_clustering=multilevel_clustering,
+            multilevel_clustering=multi_level_clustering,
             device=device,
         )
         if bias:
