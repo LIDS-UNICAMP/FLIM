@@ -17,6 +17,7 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.spatial import distance
 
 import numpy as np
+from torch.nn.modules.loss import CrossEntropyLoss
 
 from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 from ._lcn import LIDSConvNet, ParallelModule
@@ -52,6 +53,32 @@ __operations__ = {
 }
 
 
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, classes, smoothing=0.0, dim=-1, weight=None):
+        """if smoothing == 0, it's one-hot method
+        if 0 < smoothing < 1, it's smooth method
+        """
+        super(LabelSmoothingLoss, self).__init__()
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+        self.weight = weight
+        self.cls = classes
+        self.dim = dim
+
+    def forward(self, pred, target):
+        assert 0 <= self.smoothing < 1
+        pred = pred.log_softmax(dim=self.dim)
+
+        if self.weight is not None:
+            pred = pred * self.weight.unsqueeze(0)
+
+        with torch.no_grad():
+            true_dist = torch.zeros_like(pred)
+            true_dist.fill_(self.smoothing / (self.cls - 1))
+            true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+        return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
+
+
 class LCNCreator:
 
     """Class to build and a LIDSConvNet.
@@ -84,6 +111,7 @@ class LCNCreator:
         superpixels_markers=None,
         remove_border=0,
         random_state=None,
+        multilevel_clustering=True,
     ):
         """Initialize the class.
 
@@ -131,6 +159,7 @@ class LCNCreator:
         self._markers = markers
         self._input_shape = input_shape
         self._architecture = architecture
+        self._multilevel_clustering = multilevel_clustering
 
         if images is None:
             self._in_channels = input_shape[-1]
@@ -803,6 +832,7 @@ class LCNCreator:
             epochs=epochs,
             lr=lr,
             wd=wd,
+            multi_level_clustering=self._multilevel_clustering,
             device=self.device,
         )
         if out_channels is not None:
@@ -1234,9 +1264,11 @@ def _calculate_convNd_weights(
     dilation,
     bias,
     number_of_kernels_per_marker,
+    num_kernels,
     epochs,
     lr,
     wd,
+    multilevel_clustering,
     device="cpu",
 ):
     """Calculate kernels weights from image markers.
@@ -1279,7 +1311,14 @@ def _calculate_convNd_weights(
 
     if bias:
         kernel_weights, bias_weights = _compute_kernels_with_backpropagation(
-            patches, number_of_kernels_per_marker, epochs, lr, wd, device
+            patches,
+            labels,
+            number_of_kernels_per_marker,
+            num_kernels,
+            epochs,
+            lr,
+            wd,
+            device,
         )
     else:
         kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
@@ -1300,22 +1339,47 @@ def _calculate_convNd_weights(
 
 
 def _compute_kernels_with_backpropagation(
-    patches, num_kernels, epochs=50, lr=0.001, wd=0.9, device="cpu"
+    patches,
+    patches_labels,
+    num_kernels_per_marker,
+    num_kernels,
+    epochs=50,
+    lr=0.001,
+    wd=0.9,
+    multi_level_clustering=True,
+    device="cpu",
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
 
     # cluster patches
-    kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
-    kmeans.fit(patches)
-    labels = kmeans.labels_
+    if multi_level_clustering:
+        cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
+        used_pca = False
+        if cluster_centers.shape[1] < cluster_centers.shape[0]:
+            used_pca = True
+            new_cluster_centers = _select_kernels_with_pca(cluster_centers, num_kernels)
+
+        elif num_kernels < cluster_centers.shape[0]:
+            new_cluster_centers = _kmeans_roots(
+                cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
+            )
+
+        # compute distance between cluster centers and patches
+        metric = "cosine" if used_pca else "euclidean"
+        distance_matrix = distance.cdist(patches, new_cluster_centers, metric=metric)
+        labels = np.argmin(distance_matrix, axis=1)
+    else:
+        kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
+        kmeans.fit(patches)
+        labels = kmeans.labels_
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    nn.init.xavier_uniform_(lin_layer.weight)
+    nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
     nn.init.constant_(lin_layer.bias, 0)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = CrossEntropyLoss()
 
     inputs = torch.from_numpy(patches).float().to(device)
     true_labels = torch.from_numpy(labels).long().to(device)
@@ -1323,16 +1387,25 @@ def _compute_kernels_with_backpropagation(
     optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
 
     for epoch in range(epochs):
+        loss_epoch = 0.0
 
+        optim.zero_grad()
         outputs = act_layer(lin_layer(inputs))
-
         loss = criterion(outputs, true_labels)
-
-        # print(f"Epoch {epoch} loss {loss}")
-        lin_layer.zero_grad()
-
         loss.backward()
+        preds = torch.argmax(outputs, dim=1)
+
+        # gradient clip
+        # nn.utils.clip_grad_norm_(lin_layer.parameters(), 0.1)
         optim.step()
+
+        loss_epoch = loss.item()
+
+        acc = np.mean(preds.detach().cpu().numpy() == labels)
+        print("Epoch {}: loss = {}, accuracy = {}".format(epoch, loss_epoch, acc))
+
+        if loss_epoch < 0.01:
+            break
 
     kernels = lin_layer.weight.detach().cpu().numpy()
     bias = lin_layer.bias.detach().cpu().numpy()
@@ -1398,6 +1471,7 @@ def _initialize_convNd_weights(
     epochs=50,
     lr=0.001,
     wd=0.9,
+    multi_level_clustering=True,
     device="cpu",
 ):
     """Learn kernel weights from image markers.
@@ -1434,8 +1508,8 @@ def _initialize_convNd_weights(
 
         if bias:
             markers = markers.copy()
-            markers[markers != 0] = 1
-            number_of_kernels_per_marker = out_channels
+            # markers[markers != 0] = 1
+            # number_of_kernels_per_marker = out_channels
 
         weights = _calculate_convNd_weights(
             images,
@@ -1445,9 +1519,11 @@ def _initialize_convNd_weights(
             dilation,
             bias,
             number_of_kernels_per_marker,
+            out_channels,
             epochs=epochs,
             lr=lr,
             wd=wd,
+            multilevel_clustering=multilevel_clustering,
             device=device,
         )
         if bias:
