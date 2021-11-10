@@ -1049,7 +1049,7 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
     return kernels_pca
 
 
-def _select_kernels_with_pca(kernels, k):
+def _select_kernels_with_pca(kernels, k, scale_kernels=False):
     kernels_shape = kernels.shape
 
     kernels_flatted = kernels.reshape(kernels_shape[0], -1)
@@ -1060,6 +1060,9 @@ def _select_kernels_with_pca(kernels, k):
     pca.fit(kernels_flatted)
 
     kernels_pca = pca.components_
+    if scale_kernels:
+        eigen_values = pca.singular_values_
+        kernels_pca = kernels_pca * np.expand_dims(eigen_values, 1)
     kernels_pca = kernels_pca.reshape(-1, *kernels_shape[1:])
 
     return kernels_pca
@@ -1355,10 +1358,10 @@ def _compute_kernels_with_backpropagation(
     # cluster patches
     if multi_level_clustering:
         cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
-        used_pca = False
         if cluster_centers.shape[1] < cluster_centers.shape[0]:
-            used_pca = True
-            new_cluster_centers = _select_kernels_with_pca(cluster_centers, num_kernels)
+            new_cluster_centers = _select_kernels_with_pca(
+                cluster_centers, num_kernels, scale_kernels=True
+            )
 
         elif num_kernels < cluster_centers.shape[0]:
             new_cluster_centers = _kmeans_roots(
@@ -1366,8 +1369,9 @@ def _compute_kernels_with_backpropagation(
             )
 
         # compute distance between cluster centers and patches
-        metric = "cosine" if used_pca else "euclidean"
-        distance_matrix = distance.cdist(patches, new_cluster_centers, metric=metric)
+        distance_matrix = distance.cdist(
+            patches, new_cluster_centers, metric="euclidean"
+        )
         labels = np.argmin(distance_matrix, axis=1)
     else:
         kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
