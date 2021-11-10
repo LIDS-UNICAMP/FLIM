@@ -111,6 +111,7 @@ class LCNCreator:
         superpixels_markers=None,
         remove_border=0,
         random_state=None,
+        multilevel_clustering=True,
     ):
         """Initialize the class.
 
@@ -158,6 +159,7 @@ class LCNCreator:
         self._markers = markers
         self._input_shape = input_shape
         self._architecture = architecture
+        self._multilevel_clustering = multilevel_clustering
 
         if images is None:
             self._in_channels = input_shape[-1]
@@ -830,6 +832,7 @@ class LCNCreator:
             epochs=epochs,
             lr=lr,
             wd=wd,
+            multi_level_clustering=self._multilevel_clustering,
             device=self.device,
         )
         if out_channels is not None:
@@ -1265,6 +1268,7 @@ def _calculate_convNd_weights(
     epochs,
     lr,
     wd,
+    multilevel_clustering,
     device="cpu",
 ):
     """Calculate kernels weights from image markers.
@@ -1342,38 +1346,37 @@ def _compute_kernels_with_backpropagation(
     epochs=50,
     lr=0.001,
     wd=0.9,
+    multi_level_clustering=True,
     device="cpu",
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
-    batch_size = 512
-    # cluster patches
-    # kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
-    # kmeans.fit(patches)
-    # labels = kmeans.labels_
 
     # cluster patches
-    cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
-    new_cluster_centers = _kmeans_roots(
-        cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
-    )
+    if multi_level_clustering:
+        cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
+        used_pca = False
+        if cluster_centers.shape[1] < cluster_centers.shape[0]:
+            used_pca = True
+            new_cluster_centers = _select_kernels_with_pca(cluster_centers, num_kernels)
 
-    # compute distance between cluster centers and patches
-    distance_matrix = distance.cdist(patches, new_cluster_centers, metric="cosine")
-    labels = np.argmin(distance_matrix, axis=1)
+        elif num_kernels < cluster_centers.shape[0]:
+            new_cluster_centers = _kmeans_roots(
+                cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
+            )
 
-    # force norm 1
-    new_cluster_centers = new_cluster_centers / (
-        np.linalg.norm(new_cluster_centers, axis=1, keepdims=True) + DIVISION_EPSILON
-    )
-
-    # print(patches.shape)
-    # print(labels.shape)
+        # compute distance between cluster centers and patches
+        metric = "cosine" if used_pca else "euclidean"
+        distance_matrix = distance.cdist(patches, new_cluster_centers, metric=metric)
+        labels = np.argmin(distance_matrix, axis=1)
+    else:
+        kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
+        kmeans.fit(patches)
+        labels = kmeans.labels_
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
     nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
-    # lin_layer.weight.data = torch.from_numpy(new_cluster_centers).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
     criterion = CrossEntropyLoss()
@@ -1468,6 +1471,7 @@ def _initialize_convNd_weights(
     epochs=50,
     lr=0.001,
     wd=0.9,
+    multi_level_clustering=True,
     device="cpu",
 ):
     """Learn kernel weights from image markers.
@@ -1504,8 +1508,8 @@ def _initialize_convNd_weights(
 
         if bias:
             markers = markers.copy()
-            markers[markers != 0] = 1
-            number_of_kernels_per_marker = out_channels
+            # markers[markers != 0] = 1
+            # number_of_kernels_per_marker = out_channels
 
         weights = _calculate_convNd_weights(
             images,
@@ -1519,6 +1523,7 @@ def _initialize_convNd_weights(
             epochs=epochs,
             lr=lr,
             wd=wd,
+            multilevel_clustering=multilevel_clustering,
             device=device,
         )
         if bias:
