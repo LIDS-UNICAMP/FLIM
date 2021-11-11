@@ -2,6 +2,7 @@
 
 import math
 import warnings
+from numpy.core.numeric import indices
 import scipy as sp
 
 import torch
@@ -1200,7 +1201,22 @@ def _points_closest_to_centers(points, centers):
     return np.array(_points)
 
 
-def _kmeans_roots(patches, labels, n_clusters_per_label, random_state=None):
+def _find_elems_in_array(a, elems):
+    indices = []
+    for elem in elems:
+        _elem = np.expand_dims(elem, 0)
+        mask = np.all(a == _elem, axis=1)
+
+        indice = np.where(mask)[0][0:1].item()
+
+        indices.append(indice)
+
+    return indices
+
+
+def _kmeans_roots(
+    patches, labels, n_clusters_per_label, return_labels=False, random_state=None
+):
     """Cluster patch and return the root of each custer.
 
     Parameters
@@ -1224,6 +1240,8 @@ def _kmeans_roots(patches, labels, n_clusters_per_label, random_state=None):
     min_number_of_pacthes_per_label = n_clusters_per_label
 
     possible_labels = np.unique(labels)
+    cluster_labels = np.zeros_like(labels)
+    last_label = 0
     for label in possible_labels:
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
@@ -1240,6 +1258,9 @@ def _kmeans_roots(patches, labels, n_clusters_per_label, random_state=None):
             )
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             centers = kmeans.cluster_centers_
+            cluster_labels[label == labels] = kmeans.labels_ + last_label
+            last_label = cluster_labels.max() + 1
+
             # roots_of_label = _points_closest_to_centers(
             #    patches_of_label.reshape(patches_of_label.shape[0], -1), centers
             # )
@@ -1255,6 +1276,9 @@ def _kmeans_roots(patches, labels, n_clusters_per_label, random_state=None):
             roots = roots_of_label
 
     roots = roots.reshape(-1, *patches.shape[1:])
+
+    if return_labels:
+        return roots, cluster_labels
 
     return roots
 
@@ -1357,22 +1381,37 @@ def _compute_kernels_with_backpropagation(
 
     # cluster patches
     if multi_level_clustering:
-        cluster_centers = _kmeans_roots(patches, patches_labels, num_kernels_per_marker)
-        if cluster_centers.shape[1] < cluster_centers.shape[0]:
-            new_cluster_centers = _select_kernels_with_pca(
-                cluster_centers, num_kernels, scale_kernels=True
-            )
-
-        elif num_kernels < cluster_centers.shape[0]:
-            new_cluster_centers = _kmeans_roots(
-                cluster_centers, np.ones(cluster_centers.shape[0]), num_kernels
-            )
-
-        # compute distance between cluster centers and patches
-        distance_matrix = distance.cdist(
-            patches, new_cluster_centers, metric="euclidean"
+        cluster_centers, labels = _kmeans_roots(
+            patches, patches_labels, num_kernels_per_marker, return_labels=True
         )
-        labels = np.argmin(distance_matrix, axis=1)
+
+        if num_kernels < cluster_centers.shape[0]:
+            new_cluster_centers = _kmeans_roots(
+                cluster_centers,
+                np.ones(cluster_centers.shape[0], dtype=np.int64),
+                num_kernels,
+
+            )
+
+            new_center_points = _points_closest_to_centers(
+                cluster_centers, new_cluster_centers
+            )
+            center_points = _points_closest_to_centers(patches, new_center_points)
+
+            center_indices = _find_elems_in_array(patches, center_points)
+
+            new_patche_labels = np.zeros_like(labels)
+
+            for i, center in enumerate(center_indices):
+                mask = labels == labels[center]
+                new_patche_labels[mask] = i
+
+        else:
+            new_cluster_centers = cluster_centers
+            new_patche_labels = labels
+
+        labels = new_patche_labels
+
     else:
         kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
         kmeans.fit(patches)
