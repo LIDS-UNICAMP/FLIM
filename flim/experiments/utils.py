@@ -81,7 +81,7 @@ def load_markers(markers_dir):
             y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
             markers[x][y] = label
         else:
-            x, y, z, label = (
+            y, x, z, label = (
                 int(split_line[0]),
                 int(split_line[1]),
                 int(split_line[3]),
