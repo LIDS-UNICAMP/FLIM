@@ -397,6 +397,7 @@ class LCNCreator:
                 )
 
                 module.add_module(key, _module)
+                input_shape = _layer_output_shape
 
             else:
 
@@ -641,7 +642,6 @@ class LCNCreator:
                 module_output_shape[1] -= 2 * self._remove_border
                 if len(module_output_shape) > 2:
                     module_output_shape[2] -= 2 * self._remove_border
-
         return module, module_output_shape, images, markers
 
     def _build_pool_layer(self, images, markers, batch_size, layer_config):
