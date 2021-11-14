@@ -1345,6 +1345,7 @@ def _calculate_convNd_weights(
             epochs,
             lr,
             wd,
+            multilevel_clustering,
             device,
         )
     else:
@@ -1390,7 +1391,6 @@ def _compute_kernels_with_backpropagation(
                 cluster_centers,
                 np.ones(cluster_centers.shape[0], dtype=np.int64),
                 num_kernels,
-
             )
 
             new_center_points = _points_closest_to_centers(
@@ -1411,15 +1411,36 @@ def _compute_kernels_with_backpropagation(
             new_patche_labels = labels
 
         labels = new_patche_labels
+        init_kernels = new_cluster_centers
 
     else:
-        kmeans = MiniBatchKMeans(n_clusters=num_kernels, max_iter=100, tol=0.001)
+        kmeans = KMeans(
+            n_clusters=num_kernels, max_iter=100, tol=0.001, random_state=42
+        )
         kmeans.fit(patches)
         labels = kmeans.labels_
+        init_kernels = kmeans.cluster_centers_
+
+        # labels = np.random.randint(0, num_kernels, patches.shape[0])
+        # init_kernels = []
+        # for label in np.unique(labels):
+        #     init_kernels.append(patches[labels == label].mean(axis=0))
+
+        # init_kernels = _select_kernels_with_pca(patches, num_kernels)
+        # kmeans = KMeans(
+        #    n_clusters=num_kernels, max_iter=100, tol=0.001, random_state=42
+        # )
+        # kmeans.fit(patches @ init_kernels.T)
+        # labels = kmeans.labels_
+        # labels = np.random.randint(0, num_kernels, patches.shape[0])
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    # nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    init_kernels = init_kernels / (
+        np.linalg.norm(init_kernels, axis=1, keepdims=True) + DIVISION_EPSILON
+    )
+    lin_layer.weight.data = torch.from_numpy(init_kernels).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
     criterion = CrossEntropyLoss()
@@ -1454,51 +1475,6 @@ def _compute_kernels_with_backpropagation(
     bias = lin_layer.bias.detach().cpu().numpy()
 
     return kernels.reshape(-1, *patches_shape[1:]), bias
-
-
-def _compute_bias(patches, kernels, epision=1e-3):
-    kernel_shape = kernels.shape
-    kernels = kernels.reshape(kernels.shape[0], -1)
-    patches = patches.reshape(patches.shape[0], -1)
-    nbrs = NearestNeighbors(n_neighbors=1, algorithm="brute").fit(kernels)
-    _, indices = nbrs.kneighbors(patches)
-    indices = indices.squeeze()
-    bias = np.zeros(kernels.shape[0])
-
-    outputs = patches @ kernels.T
-    outputs_inv = patches @ (-kernels).T
-
-    for kernel in range(kernels.shape[0]):
-        mask = indices == kernel
-        output_in = outputs[mask, kernel]
-        output_in_inv = outputs_inv[mask, kernel]
-
-        _bias = 0
-        _bias_inv = 0
-
-        output_out = outputs[np.logical_not(mask), kernel]
-        output_out_inv = outputs_inv[np.logical_not(mask), kernel]
-
-        out_min = np.min(output_out)
-        out_min_inv = np.min(output_out_inv)
-
-        if (out_min < 0).any():
-            _bias = -out_min + epision
-
-        if (out_min_inv < 0).any():
-            _bias_inv = -out_min_inv + epision
-
-        act = (output_in + _bias).sum() - (output_out + _bias).sum()
-        act_inv = (output_in_inv + _bias_inv).sum() - (output_out_inv + _bias_inv).sum()
-
-        if act > act_inv:
-            bias[kernel] = _bias
-        else:
-            bias[kernel] = _bias_inv
-            kernels[kernel] = -kernels[kernel]
-
-    kernels = kernels.reshape(kernel_shape)
-    return kernels, bias.astype(np.float32)
 
 
 def _initialize_convNd_weights(

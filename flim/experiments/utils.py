@@ -236,7 +236,6 @@ def build_model(
     train_set=None,
     remove_border=0,
     relabel_markers=True,
-    default_std=1e-6,
     device="cpu",
     verbose=False,
 ):
@@ -249,7 +248,6 @@ def build_model(
         batch_size=batch_size,
         relabel_markers=relabel_markers,
         remove_border=remove_border,
-        default_std=default_std,
         device=device,
     )
     if verbose:

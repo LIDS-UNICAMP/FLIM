@@ -76,14 +76,16 @@ def _image_to_lab(image):
 
 
 def load_image(path: str, lab: bool = True) -> np.ndarray:
+    is_3d = False
     if path.endswith(".mimg"):
         image = load_mimage(path)
     elif path.endswith(".nii.gz") or path.endswith(".nii.gz"):
-        image = np.asanyarray(nib.load(path).dataobj)
+        image = load_image_with_ift(path)
+        is_3d = True
     else:
         image = np.asarray(Image.open(path))
 
-    if lab:
+    if lab and not is_3d:
         if image.ndim == 3 and image.shape[-1] == 4:
             image = rgba2rgb(image)
         elif image.ndim == 2 or image.shape[-1] == 1:
@@ -96,7 +98,7 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
         image = _image_to_lab(image)
         # image / (np.array([[116], [500], [200]])).reshape(1, 1, 3)
 
-    if image.dtype != float:
+    if image.dtype != float and not is_3d:
         image = img_as_float(image)
 
     return image
@@ -123,6 +125,15 @@ def load_mimage(path):
     mimge = ift.ReadMImage(path)
 
     return mimge.AsNumPy().squeeze()
+
+
+def load_image_with_ift(path):
+    assert ift is not None, "PyIFT is not available"
+
+    image = ift.ReadImageByExt(path)
+    mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
+
+    return mimage.AsNumPy().squeeze()
 
 
 def save_mimage(path, image):
