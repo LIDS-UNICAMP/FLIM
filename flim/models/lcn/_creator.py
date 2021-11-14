@@ -226,8 +226,8 @@ class LCNCreator:
             if self._has_superpixel_markers:
                 markers += self._superpixel_markers
             input_shape = self._input_shape
-            if len(input_shape) == 1:
-                input_shape = [0, 0, *input_shape]
+            # if len(input_shape) == 1:
+            #    input_shape = [0, 0, *input_shape]
             module, module_output_shape, _, _ = self._build_module(
                 module_name,
                 module_arch,
@@ -485,24 +485,31 @@ class LCNCreator:
                         images, markers, batch_size, layer_config
                     )
 
-                    _layer_output_shape = [*input_shape]
                     is_3d = "3d" in layer_config["operation"]
                     end = 3 if is_3d else 2
-                    spatial_size = np.array(input_shape[:end])
-                    kernel_size = np.array(layer.kernel_size)
-                    stride = np.array(layer.stride)
-                    padding = np.array(layer.padding)
-                    if "avg" in layer_config["operation"]:
-                        dilation = np.array([1] * end)
-                    else:
-                        dilation = np.array(layer.dilation)
-                    _layer_output_shape[:end] = list(
-                        np.floor(
-                            (spatial_size + 2 * padding - dilation * (kernel_size - 1))
-                            / stride
-                            + 1
-                        ).astype(int)
-                    )
+
+                    _layer_output_shape = [*input_shape]
+
+                    if len(input_shape) == (end + 1):
+                        spatial_size = np.array(input_shape[:end])
+                        kernel_size = np.array(layer.kernel_size)
+                        stride = np.array(layer.stride)
+                        padding = np.array(layer.padding)
+                        if "avg" in layer_config["operation"]:
+                            dilation = np.array([1] * end)
+                        else:
+                            dilation = np.array(layer.dilation)
+                        _layer_output_shape[:end] = list(
+                            np.floor(
+                                (
+                                    spatial_size
+                                    + 2 * padding
+                                    - dilation * (kernel_size - 1)
+                                )
+                                / stride
+                                + 1
+                            ).astype(int)
+                        )
 
                 elif (
                     layer_config["operation"] == "adap_avg_pool2d"
@@ -787,7 +794,6 @@ class LCNCreator:
         bias = operation_params.get("bias", False)
 
         out_channels = operation_params.get("out_channels", None)
-
         # training parameters
         epochs = operation_params.get("epochs", 50)
         lr = operation_params.get("lr", 0.001)
