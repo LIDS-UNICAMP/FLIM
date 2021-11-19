@@ -9,6 +9,7 @@ from torch.nn.modules.fold import Unfold
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
 
+
 class LIDSConvNet(nn.Sequential):
 
     """A convolutional neural network.
@@ -29,11 +30,13 @@ class LIDSConvNet(nn.Sequential):
         """Initialize the class."""
         super(LIDSConvNet, self).__init__()
         self._logger = logging.getLogger()
-        
+
         if remove_boder:
-            warnings.warn("remove_border is deprecated and it will be removed.",
+            warnings.warn(
+                "remove_border is deprecated and it will be removed.",
                 DeprecationWarning,
-                stacklevel=1)
+                stacklevel=1,
+            )
 
         self._skips = skips
         self._outputs_to_save = outputs_to_save
@@ -58,18 +61,7 @@ class LIDSConvNet(nn.Sequential):
         """
         self._logger.info("doing forward")
 
-        outputs = dict()
-        if 'input' in self._outputs_to_save:
-            outputs['input'] = x
-
-        for layer_name, layer in self.named_modules():
-
-            if layer_name in self._skips:
-                concat = torch.cat([x, *[outputs[name] for name in self._skips[layer_name]]], axis=1)
-                x = concat
-
-            if isinstance(layer, (nn.Sequential, ParallelModule)):
-                continue
+        for _, layer in self.named_children():
 
             if isinstance(layer, nn.Fold):
                 x = x.permute(0, 2, 1)
@@ -79,11 +71,8 @@ class LIDSConvNet(nn.Sequential):
             if isinstance(layer, nn.Unfold):
                 y = y.permute(0, 2, 1)
 
-            if layer_name in self._outputs_to_save:
-                outputs[layer_name] = y
-
             x = y
-    
+
         y = x
 
         return y
@@ -97,7 +86,7 @@ class ParallelModule(nn.ModuleList):
          is concatenated.
 
     """
-  
+
     def __init__(self):
         super(ParallelModule, self).__init__()
 
@@ -127,6 +116,4 @@ class ParallelModule(nn.ModuleList):
         for module in self.children():
             outputs.append(module(x))
 
-        return torch.cat(outputs, 0)
-
-
+        return torch.cat(outputs, 1)
