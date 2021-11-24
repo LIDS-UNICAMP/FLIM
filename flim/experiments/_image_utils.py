@@ -2,12 +2,12 @@ import warnings
 
 import numpy as np
 
-from skimage.color import rgb2lab, gray2rgb, rgba2rgb, lab2rgb
+from skimage.color import gray2rgb, rgba2rgb, lab2rgb
 from skimage.util import img_as_float
 
 from PIL import Image
 
-import nibabel as nib
+# import nibabel as nib
 
 ift = None
 

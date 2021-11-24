@@ -5,7 +5,6 @@ import warnings
 import torch
 
 import torch.nn as nn
-from torch.nn.modules.fold import Unfold
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
 

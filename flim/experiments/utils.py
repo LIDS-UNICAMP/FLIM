@@ -1,12 +1,10 @@
 import json
-from logging import root
 
 import os
 import warnings
 
 
 import numpy as np
-import numpy.typing as npt
 
 import torch
 
@@ -38,9 +36,6 @@ import math
 from math import floor
 
 from collections import OrderedDict
-
-from skimage.color import lab2rgb
-
 
 from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSConvNet
 

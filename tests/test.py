@@ -6,7 +6,6 @@ from os import path
 from math import ceil
 
 import torch
-from torch.nn.modules.container import T
 
 from flim.models.lcn import LCNCreator, LIDSConvNet
 from flim.experiments import utils as flim_utils

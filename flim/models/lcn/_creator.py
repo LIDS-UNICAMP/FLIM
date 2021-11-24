@@ -2,8 +2,6 @@
 
 import math
 import warnings
-from numpy.core.numeric import indices
-import scipy as sp
 
 import torch
 import torch.nn as nn
@@ -11,9 +9,8 @@ import torch.nn.functional as F
 
 from skimage.util import view_as_windows
 
-from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.neighbors import NearestNeighbors
 
 from scipy.spatial import distance
 
@@ -1398,7 +1395,7 @@ def _compute_kernels_with_backpropagation(
 
         new_patche_labels = np.zeros(patches_labels.shape, dtype=np.int64)
 
-        #if np.prod(cluster_centers.shape[1:]) < cluster_centers.shape[0]:
+        # if np.prod(cluster_centers.shape[1:]) < cluster_centers.shape[0]:
         #    kernels = _select_kernels_with_pca(cluster_centers, num_kernels)
         #    bias = np.zeros(num_kernels, dtype=np.float32)
 

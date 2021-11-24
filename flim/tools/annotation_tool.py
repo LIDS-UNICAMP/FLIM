@@ -8,8 +8,6 @@ import numpy as np
 
 from PIL import Image
 
-from skimage import io
-from skimage import util
 from skimage.segmentation import find_boundaries
 
 from magicgui import magicgui
@@ -21,7 +19,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QCursor
 from PyQt5.QtCore import Qt
 
-from numba import jit, njit
+from numba import jit
 
 from os import path
 
@@ -30,8 +28,6 @@ try:
     import pyift.pyift as ift
 except:
     warnings.warn("PyIFT is not installed.", ImportWarning)
-
-from skimage.segmentation import boundaries
 
 import torch
 

@@ -1,9 +1,6 @@
 import argparse
 
-import os
-
 import torch
-from torch.nn.parallel.data_parallel import data_parallel
 import torchvision.transforms as transforms
 
 import matplotlib as mpl

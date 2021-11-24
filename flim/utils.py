@@ -7,8 +7,6 @@ import numpy as np
 
 from scipy.ndimage import label
 
-import torch
-
 __all__ = ["label_connected_components", "compute_importance"]
 
 

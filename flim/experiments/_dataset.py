@@ -1,6 +1,5 @@
 import warnings
 import os
-from PIL import Image
 from ._image_utils import load_image
 
 from torch.utils.data import Dataset
@@ -9,8 +8,7 @@ import torch
 
 import numpy as np
 
-from skimage import io
-from skimage.color import rgb2lab, gray2rgb, rgba2rgb
+from skimage.color import rgb2lab
 
 try:
     import pyift.pyift as ift

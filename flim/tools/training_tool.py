@@ -1,8 +1,6 @@
 import argparse
-from ast import Str
 
 import os
-from os import access, makedirs
 
 import shutil
 
