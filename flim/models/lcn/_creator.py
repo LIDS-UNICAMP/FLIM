@@ -1248,7 +1248,7 @@ def _kmeans_roots(
     possible_labels = np.unique(labels)
     cluster_labels = np.zeros_like(labels)
     last_label = 0
-    for label in possible_labels:
+    for i, label in enumerate(possible_labels):
         patches_of_label = patches[label == labels].astype(np.float32)
         # TODO get a value as arg.
         if patches_of_label.shape[0] > min_number_of_pacthes_per_label:
@@ -1264,8 +1264,9 @@ def _kmeans_roots(
             )
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             centers = kmeans.cluster_centers_
-            cluster_labels[label == labels] = kmeans.labels_ + last_label
-            last_label = cluster_labels.max() + 1
+            current_labels = kmeans.labels_ + last_label
+            cluster_labels[label == labels] = current_labels
+            last_label = current_labels.max() + 1
 
             # roots_of_label = _points_closest_to_centers(
             #    patches_of_label.reshape(patches_of_label.shape[0], -1), centers
@@ -1275,6 +1276,9 @@ def _kmeans_roots(
         # TODO is enough to check if is equal?
         else:
             roots_of_label = patches_of_label.reshape(patches_of_label.shape[0], -1)
+            current_labels = np.arange(roots_of_label.shape[0]) + last_label
+            cluster_labels[label == labels] = current_labels
+            last_label = current_labels.max() + 1
 
         if roots is not None:
             roots = np.concatenate((roots, roots_of_label))
@@ -1392,25 +1396,27 @@ def _compute_kernels_with_backpropagation(
             patches, patches_labels, num_kernels_per_marker, return_labels=True
         )
 
+        new_patche_labels = np.zeros(patches_labels.shape, dtype=np.int64)
+
+        #if np.prod(cluster_centers.shape[1:]) < cluster_centers.shape[0]:
+        #    kernels = _select_kernels_with_pca(cluster_centers, num_kernels)
+        #    bias = np.zeros(num_kernels, dtype=np.float32)
+
+        #    # TODO do not return form here
+        #    return kernels.reshape(-1, *patches_shape[1:]), bias
+
         if num_kernels < cluster_centers.shape[0]:
-            new_cluster_centers = _kmeans_roots(
+            new_cluster_centers, new_labels = _kmeans_roots(
                 cluster_centers,
                 np.ones(cluster_centers.shape[0], dtype=np.int64),
                 num_kernels,
+                return_labels=True,
             )
 
-            new_center_points = _points_closest_to_centers(
-                cluster_centers, new_cluster_centers
-            )
-            center_points = _points_closest_to_centers(patches, new_center_points)
-
-            center_indices = _find_elems_in_array(patches, center_points)
-
-            new_patche_labels = np.zeros_like(labels)
-
-            for i, center in enumerate(center_indices):
-                mask = labels == labels[center]
-                new_patche_labels[mask] = i
+            for i, new_label in enumerate(new_labels):
+                label = i
+                mask = labels == label
+                new_patche_labels[mask] = new_label
 
         else:
             new_cluster_centers = cluster_centers
@@ -1427,26 +1433,13 @@ def _compute_kernels_with_backpropagation(
         labels = kmeans.labels_
         init_kernels = kmeans.cluster_centers_
 
-        # labels = np.random.randint(0, num_kernels, patches.shape[0])
-        # init_kernels = []
-        # for label in np.unique(labels):
-        #     init_kernels.append(patches[labels == label].mean(axis=0))
-
-        # init_kernels = _select_kernels_with_pca(patches, num_kernels)
-        # kmeans = KMeans(
-        #    n_clusters=num_kernels, max_iter=100, tol=0.001, random_state=42
-        # )
-        # kmeans.fit(patches @ init_kernels.T)
-        # labels = kmeans.labels_
-        # labels = np.random.randint(0, num_kernels, patches.shape[0])
-
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    # nn.init.xavier_uniform_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
-    init_kernels = init_kernels / (
-        np.linalg.norm(init_kernels, axis=1, keepdims=True) + DIVISION_EPSILON
-    )
-    lin_layer.weight.data = torch.from_numpy(init_kernels).to(device)
+    nn.init.xavier_normal_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    # init_kernels = init_kernels / (
+    #     np.linalg.norm(init_kernels, axis=1, keepdims=True) + DIVISION_EPSILON
+    # )
+    # lin_layer.weight.data = torch.from_numpy(init_kernels).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
     criterion = CrossEntropyLoss()
