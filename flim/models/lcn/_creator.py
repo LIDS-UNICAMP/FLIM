@@ -1436,11 +1436,14 @@ def _compute_kernels_with_backpropagation(
             kernel_shape = patches_shape[1:]
             # kernels = cluster_centers.reshape(-1, *kernel_shape)
             kernels = cluster_centers
+            kernels = kernels.reshape(-1, *kernel_shape)
             kernels = force_norm_1(kernels)
+            kernels = _kernels_to_channel_first(kernels)
             kernels = _select_kernels_with_pca(kernels, num_kernels)
             bias = np.zeros(num_kernels, dtype=np.float32)
+            kernels = _kernels_to_channel_last(kernels)
             # TODO do not return form here
-            return kernels.reshape(-1, *kernel_shape), bias
+            return kernels, bias
 
         if num_kernels < cluster_centers.shape[0]:
             new_cluster_centers, new_labels = _kmeans_roots(
@@ -1589,10 +1592,7 @@ def _initialize_convNd_weights(
         else:
             kernels_weights = weights
 
-        if kernels_weights.ndim == 4:
-            kernels_weights = kernels_weights.transpose(0, 3, 1, 2)
-        else:
-            kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
+        kernels_weights = _kernels_to_channel_first(kernels_weights)
 
         assert (
             out_channels is None or kernels_weights.shape[0] >= out_channels
@@ -1621,6 +1621,22 @@ def _initialize_convNd_weights(
         bias_weights = np.zeros(out_channels)
 
     return kernels_weights, bias_weights
+
+
+def _kernels_to_channel_first(kernels_weights):
+    if kernels_weights.ndim == 4:
+        kernels_weights = kernels_weights.transpose(0, 3, 1, 2)
+    else:
+        kernels_weights = kernels_weights.transpose(0, 4, 3, 1, 2)
+    return kernels_weights
+
+
+def _kernels_to_channel_last(kernels_weights):
+    if kernels_weights.ndim == 4:
+        kernels_weights = kernels_weights.transpose(0, 2, 3, 1)
+    else:
+        kernels_weights = kernels_weights.transpose(0, 2, 4, 3, 1)
+    return kernels_weights
 
 
 def _compute_similarity_matrix(filters):
