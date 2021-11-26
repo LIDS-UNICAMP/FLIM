@@ -40,7 +40,7 @@ class TestBuildSimpleModel(TestCase):
             fake_input = outputs[name]
 
         # check if output of each module is correct
-        self.assertEqual(outputs["features"].shape, torch.Size([1, 64, 56, 56]))
+        self.assertEqual(outputs["features"].shape, torch.Size([1, 27, 56, 56]))
         self.assertEqual(outputs["classifier"].shape, torch.Size([1, 2]))
 
 
