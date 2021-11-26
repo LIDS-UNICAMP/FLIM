@@ -209,23 +209,26 @@ class LCNCreator:
         images = self._images
         markers = self._markers
 
+        if self._relabel_markers and markers is not None:
+            start_label = 2 if self._has_superpixel_markers else 1
+            markers = label_connected_components(
+                markers, start_label, is_3d=markers.ndim == 4
+            )
+
+        if self._has_superpixel_markers:
+            markers += self._superpixel_markers
+        input_shape = self._input_shape
+        # if len(input_shape) == 1:
+        #    input_shape = [0, 0, *input_shape]
+        if images is not None:
+            input_shape = images[0].shape
+
         for module_name, module_arch in architecture.items():
 
             if "input" in self._to_save_outputs:
                 self._outputs["input"] = images
 
-            if self._relabel_markers and markers is not None:
-                start_label = 2 if self._has_superpixel_markers else 1
-                markers = label_connected_components(
-                    markers, start_label, is_3d=markers.ndim == 4
-                )
-
-            if self._has_superpixel_markers:
-                markers += self._superpixel_markers
-            input_shape = self._input_shape
-            # if len(input_shape) == 1:
-            #    input_shape = [0, 0, *input_shape]
-            module, module_output_shape, _, _ = self._build_module(
+            module, module_output_shape, images, markers = self._build_module(
                 module_name,
                 module_arch,
                 images,
@@ -235,6 +238,7 @@ class LCNCreator:
                 similarity_level=similarity_level,
             )
 
+            input_shape = module_output_shape
             # self.last_conv_layer_out_channels = out_channels
 
             self.LCN.add_module(module_name, module)
@@ -325,7 +329,7 @@ class LCNCreator:
         input_shape=None,
         remove_similar_filters=False,
         similarity_level=0.85,
-        verbose=False,
+        verbose=True,
     ):
         """Builds a module.
 
@@ -424,8 +428,28 @@ class LCNCreator:
                         input_shape,
                         layer_config,
                     )
+                    is_3d = layer_config["operation"] == "conv3d"
+                    end = 3 if is_3d else 2
 
-                    _layer_output_shape = [*input_shape[:2], layer.out_channels]
+                    _layer_output_shape = [*input_shape[:end], layer.out_channels]
+
+                    spatial_size = np.array(input_shape[:end])
+                    kernel_size = np.array(layer.kernel_size)
+                    stride = np.array(layer.stride)
+                    padding = np.array(layer.padding)
+                    dilation = np.array(layer.dilation)
+                    _layer_output_shape[:end] = list(
+                        np.floor(
+                            (
+                                spatial_size
+                                + 2 * padding
+                                - dilation * (kernel_size - 1)
+                                - 1
+                            )
+                            / stride
+                            + 1
+                        ).astype(int)
+                    )
 
                 elif layer_config["operation"] in [
                     "marker_based_norm",
@@ -479,7 +503,7 @@ class LCNCreator:
                     or layer_config["operation"] == "avg_pool3d"
                 ):
 
-                    layer = self._build_pool_layer(
+                    layer, _ = self._build_pool_layer(
                         images, markers, batch_size, layer_config
                     )
 
@@ -503,6 +527,7 @@ class LCNCreator:
                                     spatial_size
                                     + 2 * padding
                                     - dilation * (kernel_size - 1)
+                                    - 1
                                 )
                                 / stride
                                 + 1
@@ -583,7 +608,7 @@ class LCNCreator:
                         nn.init.constant_(layer.bias, 0)
 
                     layer.to(device)
-                    _layer_output_shape = [*input_shape]
+                    _layer_output_shape = [operation_params["out_features"]]
 
                 else:
                     layer = operation(**operation_params)
@@ -617,7 +642,7 @@ class LCNCreator:
                         else:
                             images = outputs.permute(0, 2, 3, 1).detach().numpy()
 
-                    _layer_output_shape = list(images.shape[1:])
+                        # _layer_output_shape = list(images.shape[1:])
                 layer.train()
                 module.add_module(key, layer)
 
@@ -670,7 +695,8 @@ class LCNCreator:
             kernel_size = [kernel_size] * (3 if is_3d else 2)
 
         operation_params["stride"] = 1
-        operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
+        # TODO what about dilation?
+        # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
 
         if images is not None and markers is not None:
             torch_images = torch.from_numpy(images)
@@ -712,7 +738,7 @@ class LCNCreator:
         operation_params["stride"] = stride
         operation_params["padding"] = padding
         layer = operation(**operation_params)
-        return layer
+        return layer, images
 
     def _build_m_norm_layer(self, images, markers, input_shape, layer_config):
         operation_name = layer_config["operation"]
@@ -782,8 +808,11 @@ class LCNCreator:
         )
         use_random_kernels = operation_params.get("use_random_kernels", False)
 
+        use_pca = operation_params.get("use_pca", True)
+
         kernel_size = operation_params["kernel_size"]
         stride = operation_params.get("stride", 1)
+        # TODO check padding is enough to maintain the input size
         padding = operation_params.get("padding", 0)
         padding_mode = operation_params.get("padding_mode", "zeros")
         dilation = operation_params.get("dilation", 1)
@@ -833,6 +862,7 @@ class LCNCreator:
             bias=bias,
             number_of_kernels_per_marker=number_of_kernels_per_marker,
             use_random_kernels=use_random_kernels,
+            use_pca=use_pca,
             epochs=epochs,
             lr=lr,
             wd=wd,
@@ -1302,6 +1332,7 @@ def _calculate_convNd_weights(
     epochs,
     lr,
     wd,
+    use_pca,
     multilevel_clustering,
     device="cpu",
 ):
@@ -1352,25 +1383,30 @@ def _calculate_convNd_weights(
             epochs,
             lr,
             wd,
+            use_pca,
             multilevel_clustering,
             device,
         )
     else:
         kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
 
-    # force norm 1
-    kernel_weights_shape = kernel_weights.shape
-    kernel_weights = kernel_weights.reshape(kernel_weights_shape[0], -1)
-    kernel_weights = kernel_weights / (
-        np.linalg.norm(kernel_weights, axis=1, keepdims=True) + DIVISION_EPSILON
-    )
-
-    kernel_weights = kernel_weights.reshape(kernel_weights_shape)
+        # force norm 1
+        kernel_weights = force_norm_1(kernel_weights)
 
     if bias:
         return kernel_weights, bias_weights
     else:
         return kernel_weights
+
+
+def force_norm_1(kernel_weights):
+    kernel_weights_shape = kernel_weights.shape
+    kernel_weights = kernel_weights.reshape(kernel_weights_shape[0], -1)
+    kernel_weights = kernel_weights / (
+        np.linalg.norm(kernel_weights, axis=1, keepdims=True) + DIVISION_EPSILON
+    )
+    kernel_weights = kernel_weights.reshape(kernel_weights_shape)
+    return kernel_weights
 
 
 def _compute_kernels_with_backpropagation(
@@ -1381,6 +1417,7 @@ def _compute_kernels_with_backpropagation(
     epochs=50,
     lr=0.001,
     wd=0.9,
+    use_pca=True,
     multi_level_clustering=True,
     device="cpu",
 ):
@@ -1395,12 +1432,15 @@ def _compute_kernels_with_backpropagation(
 
         new_patche_labels = np.zeros(patches_labels.shape, dtype=np.int64)
 
-        # if np.prod(cluster_centers.shape[1:]) < cluster_centers.shape[0]:
-        #    kernels = _select_kernels_with_pca(cluster_centers, num_kernels)
-        #    bias = np.zeros(num_kernels, dtype=np.float32)
-
-        #    # TODO do not return form here
-        #    return kernels.reshape(-1, *patches_shape[1:]), bias
+        if use_pca and np.prod(cluster_centers.shape[1:]) < cluster_centers.shape[0]:
+            kernel_shape = patches_shape[1:]
+            # kernels = cluster_centers.reshape(-1, *kernel_shape)
+            kernels = cluster_centers
+            kernels = force_norm_1(kernels)
+            kernels = _select_kernels_with_pca(kernels, num_kernels)
+            bias = np.zeros(num_kernels, dtype=np.float32)
+            # TODO do not return form here
+            return kernels.reshape(-1, *kernel_shape), bias
 
         if num_kernels < cluster_centers.shape[0]:
             new_cluster_centers, new_labels = _kmeans_roots(
@@ -1469,8 +1509,9 @@ def _compute_kernels_with_backpropagation(
 
     kernels = lin_layer.weight.detach().cpu().numpy()
     bias = lin_layer.bias.detach().cpu().numpy()
-
-    return kernels.reshape(-1, *patches_shape[1:]), bias
+    kernels = force_norm_1(kernels)
+    kernels = kernels.reshape(-1, *patches_shape[1:])
+    return kernels, bias
 
 
 def _initialize_convNd_weights(
@@ -1483,6 +1524,7 @@ def _initialize_convNd_weights(
     bias=False,
     number_of_kernels_per_marker=16,
     use_random_kernels=False,
+    use_pca=True,
     epochs=50,
     lr=0.001,
     wd=0.9,
@@ -1538,6 +1580,7 @@ def _initialize_convNd_weights(
             epochs=epochs,
             lr=lr,
             wd=wd,
+            use_pca=use_pca,
             multilevel_clustering=multi_level_clustering,
             device=device,
         )
@@ -1556,8 +1599,10 @@ def _initialize_convNd_weights(
         ), "Not enough kernels were generated!!!"
 
         if not bias:
-            if (out_channels is not None) and (
-                np.prod(kernels_weights.shape[1:]) < kernels_weights.shape[0]
+            if (
+                use_pca
+                and (out_channels is not None)
+                and (np.prod(kernels_weights.shape[1:]) < kernels_weights.shape[0])
             ):
                 kernels_weights = _select_kernels_with_pca(
                     kernels_weights, out_channels

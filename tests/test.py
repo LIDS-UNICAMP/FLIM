@@ -56,7 +56,10 @@ class TestBuildModelWithMarkers(TestCase):
         )
 
         creator = LCNCreator(
-            architecture=arch, images=images, markers=markers, device=device
+            architecture=arch,
+            images=images,
+            markers=markers,
+            device=device,
         )
 
         creator.build_model()
@@ -78,7 +81,7 @@ class TestBuildModelWithMarkers(TestCase):
         # check if output of each module is correct
         self.assertEqual(
             outputs["features"].shape,
-            torch.Size([1, 64, ceil(images.shape[1] / 4), ceil(images.shape[2] / 4)]),
+            torch.Size([1, 27, ceil(images.shape[1] / 4), ceil(images.shape[2] / 4)]),
         )
         self.assertEqual(outputs["classifier"].shape, torch.Size([1, 2]))
 

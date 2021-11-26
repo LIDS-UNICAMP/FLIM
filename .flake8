@@ -13,4 +13,4 @@ statistics = True
 exit-zero = True
 count = True
 show-source = True
-jobs=auto
+jobs = auto
