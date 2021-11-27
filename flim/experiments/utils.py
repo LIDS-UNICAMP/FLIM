@@ -42,7 +42,13 @@ from collections import OrderedDict
 from skimage.color import lab2rgb
 
 
-from ..models.lcn import LCNCreator, MarkerBasedNorm2d, MarkerBasedNorm3d, LIDSConvNet
+from ..models.lcn import (
+    LCNCreator,
+    MarkerBasedNorm2d,
+    MarkerBasedNorm3d,
+    LIDSConvNet,
+    ParallelModule,
+)
 
 from ._dataset import LIDSDataset
 
@@ -495,8 +501,11 @@ def load_torchvision_model_weights(model, weigths_path):
 def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
 
-    for name, layer in model.named_children():
+    for name, layer in model.named_modules():
+        if isinstance(layer, (nn.Sequential, ParallelModule)):
+            continue
         print(name)
+        name = name.split(0)[-1]
         if isinstance(layer, MarkerBasedNorm2d):
             conv_name = name.replace("m-norm", "conv")
             with open(os.path.join(lids_model_dir, f"{conv_name}-mean.txt")) as f:
