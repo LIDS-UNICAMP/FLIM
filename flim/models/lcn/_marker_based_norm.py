@@ -8,7 +8,7 @@ class _MarkerBasedNorm(nn.Module):
     def __init__(self, in_channels, mean, std, epsilon=0.1):
         super(_MarkerBasedNorm, self).__init__()
 
-        self.in_channles = in_channels
+        self.in_channels = in_channels
         self._epsilon = epsilon
 
         if mean is None:
@@ -31,6 +31,9 @@ class _MarkerBasedNorm(nn.Module):
         ).view(correct_shape)
         y = x * self.weight.view(correct_shape) + self.bias.view(correct_shape)
         return y
+
+    def extra_repr(self):
+        return "{}, epsilon={}".format(self.in_channels, self._epsilon)
 
 
 class MarkerBasedNorm2d(_MarkerBasedNorm):

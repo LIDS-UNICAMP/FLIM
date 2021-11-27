@@ -431,25 +431,28 @@ class LCNCreator:
                     is_3d = layer_config["operation"] == "conv3d"
                     end = 3 if is_3d else 2
 
-                    _layer_output_shape = [*input_shape[:end], layer.out_channels]
+                    if len(input_shape) > 1:
+                        _layer_output_shape = [*input_shape[:end], layer.out_channels]
 
-                    spatial_size = np.array(input_shape[:end])
-                    kernel_size = np.array(layer.kernel_size)
-                    stride = np.array(layer.stride)
-                    padding = np.array(layer.padding)
-                    dilation = np.array(layer.dilation)
-                    _layer_output_shape[:end] = list(
-                        np.floor(
-                            (
-                                spatial_size
-                                + 2 * padding
-                                - dilation * (kernel_size - 1)
-                                - 1
-                            )
-                            / stride
-                            + 1
-                        ).astype(int)
-                    )
+                        spatial_size = np.array(input_shape[:end])
+                        kernel_size = np.array(layer.kernel_size)
+                        stride = np.array(layer.stride)
+                        padding = np.array(layer.padding)
+                        dilation = np.array(layer.dilation)
+                        _layer_output_shape[:end] = list(
+                            np.floor(
+                                (
+                                    spatial_size
+                                    + 2 * padding
+                                    - dilation * (kernel_size - 1)
+                                    - 1
+                                )
+                                / stride
+                                + 1
+                            ).astype(int)
+                        )
+                    else:
+                        _layer_output_shape = [layer.out_channels]
 
                 elif layer_config["operation"] in [
                     "marker_based_norm",
