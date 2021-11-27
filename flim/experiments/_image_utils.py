@@ -133,7 +133,7 @@ def load_image_with_ift(path):
     image = ift.ReadImageByExt(path)
     mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
 
-    return mimage.AsNumPy().squeeze()
+    return mimage.AsNumPy().squeeze().transpose(1, 2, 0, 3)
 
 
 def save_mimage(path, image):
