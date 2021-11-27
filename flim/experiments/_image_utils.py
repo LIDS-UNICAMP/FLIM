@@ -80,7 +80,7 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
     if path.endswith(".mimg"):
         image = load_mimage(path)
     elif path.endswith(".nii.gz") or path.endswith(".nii.gz"):
-        image = load_image_with_ift(path)
+        image = load_image_with_ift(path, lab)
         is_3d = True
     else:
         image = np.asarray(Image.open(path))
@@ -127,13 +127,17 @@ def load_mimage(path):
     return mimge.AsNumPy().squeeze()
 
 
-def load_image_with_ift(path):
+def load_image_with_ift(path, lab):
     assert ift is not None, "PyIFT is not available"
 
-    image = ift.ReadImageByExt(path)
-    mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
+    image  = ift.ReadImageByExt(path)
+    if (lab):
+        image = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
+        image = image.AsNumPy().transpose(1,2,0,3)
+    else:
+        image = image.AsNumPy().transpose(1,2,0)
 
-    return mimage.AsNumPy().squeeze()
+    return image.squeeze()
 
 
 def save_mimage(path, image):

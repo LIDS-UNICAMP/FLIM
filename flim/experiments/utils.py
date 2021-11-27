@@ -542,7 +542,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
                     kernel_size[2],
                     in_channels,
                 )
-                weights = weights.transpose(0, 4, 1, 2, 3)
+                weights = weights.transpose(0, 4, 3, 2, 1)
 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
 
@@ -565,6 +565,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
             layer.std_by_channel = nn.Parameter(
                 torch.from_numpy(std.reshape(1, -1, 1, 1, 1)).float()
             )
+
 
     """for name, layer in model.classifier.named_children():
         print(name)
