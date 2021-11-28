@@ -85,7 +85,10 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
             else:
                 image = mimage.AsNumPy().transpose(0,1,2,3)
         else:
-            image = image.AsNumPy()
+            if (ift.Is3DImage(image)):
+                image = image.AsNumPy().transpose(1,2,0)
+            else:
+                image = image.AsNumPy()
         image = image.squeeze()    
     elif path.endswith(".nii.gz"):
         if lab:
@@ -110,7 +113,6 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
             if image.dtype != float:
                 image = img_as_float(image)
 
-    print(image.shape)    
     return image
 
 
