@@ -1623,6 +1623,8 @@ def _initialize_convNd_weights(
 
         bias_weights = np.zeros(out_channels)
 
+    kernels_weights = force_norm_1(kernels_weights)
+
     return kernels_weights, bias_weights
 
 
