@@ -73,45 +73,61 @@ def _image_to_lab(image):
     return new_image
 
 
+def load_and_convert_2d_images(path, lab: bool = True) -> np.ndarray:
+    image = Image.open(path)
+    image = np.array(image)
+    if lab:
+        if image.ndim == 3 and image.shape[-1] == 4:
+            image = rgba2rgb(image)
+        elif image.ndim == 2 or image.shape[-1] == 1:
+            image = gray2rgb(image)
+        elif image.ndim == 3 and image.shape[-1] > 4:
+            image = gray2rgb(image)
+        elif image.ndim == 4 and image.shape[-1] == 4:
+            image = rgba2rgb(image)
+            
+        image = _image_to_lab(image)
+            
+        if image.dtype != float:
+            image = img_as_float(image)
+
+    return(image)
+
 def load_image(path: str, lab: bool = True) -> np.ndarray:
     if path.endswith(".mimg"):
         image = load_mimage(path)    
     elif ift is not None:
         image  = ift.ReadImageByExt(path)
-        if lab:
-            mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
-            if (ift.Is3DImage(image)):
-                image = mimage.AsNumPy().transpose(1,2,0,3)
+        if (ift.Is3DImage(image)):
+            if lab:
+                mimage = ift.ImageToMImage(image, \
+                                           color_space=ift.LabNorm2_CSPACE)
+                image  = mimage.AsNumPy().transpose(1,2,0,3)
             else:
-                image = mimage.AsNumPy().transpose(0,1,2,3)
-        else:
-            if (ift.Is3DImage(image)):
                 image = image.AsNumPy().transpose(1,2,0)
-            else:
-                image = image.AsNumPy()
-        image = image.squeeze()    
+            image = image.squeeze()
+        else: # 2D Image
+            # Apparently, load_and_convert_2d_images and
+            # the code below should do the same, but this is not
+            # happening.
+            
+            image = load_and_convert_2d_images(path, lab)
+
+#           if lab:
+#              mimage = ift.ImageToMImage(image, \
+#                                          color_space=ift.LABNorm2_CSPACE)
+#              image = mimage.AsNumPy().transpose(0,1,2,3)
+#           else:
+#              image = image.AsNumPy()
+#           image = image.squeeze()
+
     elif path.endswith(".nii.gz"):
         if lab:
             warnings.warn("pyift is required to convert 3D images into lab", UserWarning)
         image  = nib.load(path)
         image  = image.get_fdata().transpose(1,0,2)
-    else:
-        image = Image.open(path)
-        image = np.array(image)
-        if lab:
-            if image.ndim == 3 and image.shape[-1] == 4:
-                image = rgba2rgb(image)
-            elif image.ndim == 2 or image.shape[-1] == 1:
-                image = gray2rgb(image)
-            elif image.ndim == 3 and image.shape[-1] > 4:
-                image = gray2rgb(image)
-            elif image.ndim == 4 and image.shape[-1] == 4:
-                image = rgba2rgb(image)
-
-            image = _image_to_lab(image)
-
-            if image.dtype != float:
-                image = img_as_float(image)
+    else: # For 2D images when pyift is not available
+        image = load_and_convert_2d_images(path, lab)
 
     return image
 
