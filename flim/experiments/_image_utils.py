@@ -101,7 +101,7 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
         if (ift.Is3DImage(image)):
             if lab:
                 mimage = ift.ImageToMImage(image, \
-                                           color_space=ift.LabNorm2_CSPACE)
+                                           color_space=ift.LABNorm2_CSPACE)
                 image  = mimage.AsNumPy().transpose(1,2,0,3)
             else:
                 image = image.AsNumPy().transpose(1,2,0)
