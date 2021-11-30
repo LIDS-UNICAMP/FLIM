@@ -871,7 +871,6 @@ class LCNCreator:
             wd=wd,
             multi_level_clustering=self._multilevel_clustering,
             device=self.device,
-            random_state=self.random_state,
         )
         if out_channels is not None:
             assert (
@@ -1291,7 +1290,7 @@ def _kmeans_roots(
                 n_clusters=n_clusters_per_label,
                 max_iter=100,
                 tol=0.001,
-                random_state=random_state,
+                random_state=42,
             )
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             centers = kmeans.cluster_centers_
@@ -1339,7 +1338,6 @@ def _calculate_convNd_weights(
     use_pca,
     multilevel_clustering,
     device="cpu",
-    random_state=None,
 ):
     """Calculate kernels weights from image markers.
 
@@ -1391,12 +1389,9 @@ def _calculate_convNd_weights(
             use_pca,
             multilevel_clustering,
             device,
-            random_state,
         )
     else:
-        kernel_weights = _kmeans_roots(
-            patches, labels, number_of_kernels_per_marker, random_state=random_state
-        )
+        kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
 
         # force norm 1
         kernel_weights = force_norm_1(kernel_weights)
@@ -1428,7 +1423,6 @@ def _compute_kernels_with_backpropagation(
     use_pca=True,
     multi_level_clustering=True,
     device="cpu",
-    random_state=None,
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
@@ -1436,11 +1430,7 @@ def _compute_kernels_with_backpropagation(
     # cluster patches
     if multi_level_clustering:
         cluster_centers, labels = _kmeans_roots(
-            patches,
-            patches_labels,
-            num_kernels_per_marker,
-            return_labels=True,
-            random_state=random_state,
+            patches, patches_labels, num_kernels_per_marker, return_labels=True
         )
 
         new_patche_labels = np.zeros(patches_labels.shape, dtype=np.int64)
@@ -1546,7 +1536,6 @@ def _initialize_convNd_weights(
     wd=0.9,
     multi_level_clustering=True,
     device="cpu",
-    random_state=None,
 ):
     """Learn kernel weights from image markers.
 
@@ -1600,7 +1589,6 @@ def _initialize_convNd_weights(
             use_pca=use_pca,
             multilevel_clustering=multi_level_clustering,
             device=device,
-            random_state=random_state,
         )
         if bias:
             kernels_weights, bias_weights = weights
