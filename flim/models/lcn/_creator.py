@@ -11,6 +11,7 @@ from skimage.util import view_as_windows
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from sklearn.metrics.pairwise import cosine_similarity
 
 from scipy.spatial import distance
 
@@ -1251,7 +1252,12 @@ def _find_elems_in_array(a, elems):
 
 
 def _kmeans_roots(
-    patches, labels, n_clusters_per_label, return_labels=False, random_state=None
+    patches,
+    labels,
+    n_clusters_per_label,
+    return_labels=False,
+    random_state=None,
+    distance_metric="euclidean",
 ):
     """Cluster patch and return the root of each custer.
 
@@ -1291,7 +1297,13 @@ def _kmeans_roots(
                 max_iter=100,
                 tol=0.001,
                 random_state=42,
+                n_init=10,
             )
+
+            if distance_metric == "cosine":
+                kmeans.euclidean_distances = cosine_similarity
+                kmeans._euclidean_distances = cosine_similarity
+
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             centers = kmeans.cluster_centers_
             current_labels = kmeans.labels_ + last_label
@@ -1615,7 +1627,10 @@ def _initialize_convNd_weights(
                 out_channels < kernels_weights.shape[0]
             ):
                 kernels_weights = _kmeans_roots(
-                    kernels_weights, np.ones(kernels_weights.shape[0]), out_channels
+                    kernels_weights,
+                    np.ones(kernels_weights.shape[0]),
+                    out_channels,
+                    distance_metric="cosine",
                 )
 
     else:
