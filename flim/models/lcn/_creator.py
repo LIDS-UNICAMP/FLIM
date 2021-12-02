@@ -1301,8 +1301,12 @@ def _kmeans_roots(
             )
 
             if distance_metric == "cosine":
-                kmeans.euclidean_distances = cosine_similarity
-                kmeans._euclidean_distances = cosine_similarity
+
+                def _metric(x, y):
+                    return 1 - cosine_similarity(x, y)
+
+                kmeans.euclidean_distances = _metric
+                kmeans._euclidean_distances = _metric
 
             kmeans.fit(patches_of_label.reshape(patches_of_label.shape[0], -1))
             centers = kmeans.cluster_centers_
