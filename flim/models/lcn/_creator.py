@@ -1303,7 +1303,7 @@ def _kmeans_roots(
             if distance_metric == "cosine":
 
                 def _metric(x, y):
-                    return 1 - cosine_similarity(x, y)
+                    return (1.0 - cosine_similarity(x, y))
 
                 kmeans.euclidean_distances = _metric
                 kmeans._euclidean_distances = _metric
@@ -1314,6 +1314,9 @@ def _kmeans_roots(
             cluster_labels[label == labels] = current_labels
             last_label = current_labels.max() + 1
 
+            kmeans.euclidean_distances = "euclidean"
+            kmeans._euclidean_distances = "euclidean"
+            
             # roots_of_label = _points_closest_to_centers(
             #    patches_of_label.reshape(patches_of_label.shape[0], -1), centers
             # )
