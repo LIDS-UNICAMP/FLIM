@@ -11,7 +11,11 @@ from skimage.util import view_as_windows
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import (
+    cosine_similarity,
+    euclidean_distances,
+    _euclidean_distances,
+)
 
 from scipy.spatial import distance
 
@@ -1303,7 +1307,7 @@ def _kmeans_roots(
             if distance_metric == "cosine":
 
                 def _metric(x, y):
-                    return (1.0 - cosine_similarity(x, y))
+                    return 1.0 - cosine_similarity(x, y)
 
                 kmeans.euclidean_distances = _metric
                 kmeans._euclidean_distances = _metric
@@ -1314,9 +1318,9 @@ def _kmeans_roots(
             cluster_labels[label == labels] = current_labels
             last_label = current_labels.max() + 1
 
-            kmeans.euclidean_distances = "euclidean"
-            kmeans._euclidean_distances = "euclidean"
-            
+            kmeans.euclidean_distances = euclidean_distances
+            kmeans._euclidean_distances = _euclidean_distances
+
             # roots_of_label = _points_closest_to_centers(
             #    patches_of_label.reshape(patches_of_label.shape[0], -1), centers
             # )
@@ -1473,6 +1477,7 @@ def _compute_kernels_with_backpropagation(
                 np.ones(cluster_centers.shape[0], dtype=np.int64),
                 num_kernels,
                 return_labels=True,
+                distance_metric="cosine",
             )
 
             for i, new_label in enumerate(new_labels):
