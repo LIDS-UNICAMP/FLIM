@@ -1502,11 +1502,11 @@ def _compute_kernels_with_backpropagation(
 
     lin_layer = nn.Linear(patches.shape[1], num_kernels, bias=True).to(device)
     act_layer = nn.ReLU(True).to(device)
-    nn.init.xavier_normal_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
-    # init_kernels = init_kernels / (
-    #     np.linalg.norm(init_kernels, axis=1, keepdims=True) + DIVISION_EPSILON
-    # )
-    # lin_layer.weight.data = torch.from_numpy(init_kernels).to(device)
+    # nn.init.xavier_normal_(lin_layer.weight, gain=nn.init.calculate_gain("relu"))
+    init_kernels = init_kernels / (
+        np.linalg.norm(init_kernels, axis=1, keepdims=True) + DIVISION_EPSILON
+    )
+    lin_layer.weight.data = torch.from_numpy(init_kernels).to(device)
     nn.init.constant_(lin_layer.bias, 0)
 
     criterion = CrossEntropyLoss()
