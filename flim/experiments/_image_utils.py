@@ -13,8 +13,8 @@ ift = None
 try:
     import pyift.pyift as ift
 except:
-    warnings.warn("PyIFT is not installed.", ImportWarning)
-
+    warnings.warn("pyift is not installed.", RuntimeWarning)
+    
 __all__ = [
     "load_image",
     "image_to_rgb",
