@@ -1185,7 +1185,7 @@ def _generate_patches(images, markers, in_channels, kernel_size, dilation):
         markers_x = indices[0]
         markers_y = indices[1]
         if not is_2d:
-            markers_z = indices[1]
+            markers_z = indices[2]
         labels = image_markers[indices] - 1
 
         mask = np.logical_and(markers_x < image_shape[0], markers_y < image_shape[1])
@@ -1385,6 +1385,8 @@ def _calculate_convNd_weights(
     patches, labels = _generate_patches(
         images, markers, in_channels, kernel_size, dilation
     )
+
+
 
     axis = tuple(range(len(kernel_size) + 1))
 
