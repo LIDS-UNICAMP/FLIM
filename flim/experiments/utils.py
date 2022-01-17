@@ -62,7 +62,6 @@ except:
 def load_markers(markers_dir):
     markers = []
     lines = None
-    print(markers_dir)
     with open(markers_dir, "r") as f:
         lines = f.readlines()
 
@@ -79,8 +78,6 @@ def load_markers(markers_dir):
 
     for line in lines[1:]:
         split_line = line.split(" ")
-        print(line)
-        print(split_line)
         if is_2d:
             y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
             markers[x][y] = label
@@ -91,7 +88,6 @@ def load_markers(markers_dir):
                 int(split_line[2]),
                 int(split_line[4]),
             )
-            print(x,y,z,label)
             markers[x][y][z] = label
 
     return markers
