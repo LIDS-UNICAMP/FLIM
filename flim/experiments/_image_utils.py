@@ -14,13 +14,14 @@ try:
     import pyift.pyift as ift
 except:
     warnings.warn("pyift is not installed.", RuntimeWarning)
-    
+
 __all__ = [
     "load_image",
     "image_to_rgb",
     "from_lab_to_rgb",
     "load_mimage",
     "save_mimage",
+    "image_to_lab",
 ]
 
 
@@ -29,6 +30,10 @@ def _labf(x):
         return x ** (0.33333333333)
     else:
         return (841.0 / 108.0) * (x) + (4.0 / 29.0)
+
+
+def image_to_lab(image):
+    return _image_to_lab(image)
 
 
 def _image_to_lab(image):
@@ -85,48 +90,50 @@ def load_and_convert_2d_images(path, lab: bool = True) -> np.ndarray:
             image = gray2rgb(image)
         elif image.ndim == 4 and image.shape[-1] == 4:
             image = rgba2rgb(image)
-            
+
         image = _image_to_lab(image)
-            
+
         if image.dtype != float:
             image = img_as_float(image)
 
-    return(image)
+    return image
+
 
 def load_image(path: str, lab: bool = True) -> np.ndarray:
     if path.endswith(".mimg"):
-        image = load_mimage(path)    
+        image = load_mimage(path)
     elif ift is not None:
-        image  = ift.ReadImageByExt(path)
-        if (ift.Is3DImage(image)):
+        image = ift.ReadImageByExt(path)
+        if ift.Is3DImage(image):
             if lab:
-                mimage = ift.ImageToMImage(image, \
-                                           color_space=ift.LABNorm2_CSPACE)
-                image  = mimage.AsNumPy().transpose(1,2,0,3)
+                mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
+                image = mimage.AsNumPy().transpose(1, 2, 0, 3)
             else:
-                image = image.AsNumPy().transpose(1,2,0)
+                image = image.AsNumPy().transpose(1, 2, 0)
             image = image.squeeze()
-        else: # 2D Image
+        else:  # 2D Image
             # Apparently, load_and_convert_2d_images and
             # the code below should do the same, but this is not
             # happening.
-            
+
             image = load_and_convert_2d_images(path, lab)
 
-#           if lab:
-#              mimage = ift.ImageToMImage(image, \
-#                                          color_space=ift.LABNorm2_CSPACE)
-#              image = mimage.AsNumPy().transpose(0,1,2,3)
-#           else:
-#              image = image.AsNumPy()
-#           image = image.squeeze()
+    #           if lab:
+    #              mimage = ift.ImageToMImage(image, \
+    #                                          color_space=ift.LABNorm2_CSPACE)
+    #              image = mimage.AsNumPy().transpose(0,1,2,3)
+    #           else:
+    #              image = image.AsNumPy()
+    #           image = image.squeeze()
 
     elif path.endswith(".nii.gz"):
         if lab:
-            warnings.warn("pyift is required to convert 3D images into lab", UserWarning)
-        image  = nib.load(path)
-        image  = image.get_fdata().transpose(1,0,2)
-    else: # For 2D images when pyift is not available
+            warnings.warn(
+                "pyift is required to convert 3D images into lab", UserWarning
+            )
+        image = nib.load(path)
+        image = image.get_fdata().transpose(1, 0, 2)
+    else:  # For 2D images when pyift is not available
         image = load_and_convert_2d_images(path, lab)
 
     return image
