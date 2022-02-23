@@ -19,7 +19,9 @@ __all__ = ["LIDSDataset", "ToTensor", "ToLAB"]
 
 
 class LIDSDataset(Dataset):
-    def __init__(self, root_dir, split_dir=None, transform=None, return_name=False):
+    def __init__(
+        self, root_dir, split_dir=None, lab=True, transform=None, return_name=False
+    ):
         self.root_dir = root_dir
         self.split_dir = split_dir
         self.transform = transform
@@ -28,6 +30,8 @@ class LIDSDataset(Dataset):
         self.images_names = None
         self.opf_data = None
         self.opf_labels = None
+
+        self._lab = lab
 
         if self.root_dir.endswith(".zip"):
             self.opf_data, self.opf_labels = self._get_data_from_opfdataset()
@@ -43,7 +47,7 @@ class LIDSDataset(Dataset):
         if self.opf_data is None:
             image_path = os.path.join(self.root_dir, self.images_names[idx])
 
-            image = load_image(image_path)
+            image = load_image(image_path, lab=self._lab)
 
             label = self._label_of_image(self.images_names[idx])
 

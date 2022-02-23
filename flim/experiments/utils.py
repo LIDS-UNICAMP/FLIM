@@ -222,8 +222,8 @@ def load_architecture(architecture_dir):
     return architecture
 
 
-def configure_dataset(dataset_dir, split_dir, transform=None):
-    dataset = LIDSDataset(dataset_dir, split_dir, transform)
+def configure_dataset(dataset_dir, split_dir, lab=True, transform=None):
+    dataset = LIDSDataset(dataset_dir, split_dir, lab, transform)
 
     return dataset
 
@@ -574,7 +574,6 @@ def load_weights_from_lids_model(model, lids_model_dir):
             layer.std_by_channel = nn.Parameter(
                 torch.from_numpy(std.reshape(1, -1, 1, 1, 1)).float()
             )
-
 
     """for name, layer in model.classifier.named_children():
         print(name)
@@ -1031,11 +1030,7 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
 
     for i, w in enumerate(weights):
         cam += (
-            w
-            * target[
-                i,
-                :,
-            ]
+            w * target[i, :,]
         )
 
     cam[cam < 0] = 0.0
