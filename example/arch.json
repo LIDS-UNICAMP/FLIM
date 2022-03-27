@@ -1,6 +1,11 @@
 {
     "features": {
         "type": "sequential",
+        "params": {
+            "epochs": 50,
+            "lr": 0.001,
+            "wd": 0.9
+        },
         "layers": {
             "m_norm": {
                 "operation": "marker_based_norm",
@@ -17,17 +22,15 @@
                     "padding": 2,
                     "dilation": 1,
                     "out_channels": 64,
-                    "number_of_kernels_per_marker": 64
+                    "bias": true
                 }
             },
-
             "activation": {
                 "operation": "relu",
                 "params": {
                     "inplace": true
                 }
             },
-
             "pool": {
                 "operation": "max_pool2d",
                 "params": {
@@ -36,12 +39,10 @@
                     "padding": 1
                 }
             },
-
             "norm1": {
                 "operation": "batch_norm2d",
                 "params": {}
             },
-
             "m_norm2": {
                 "operation": "marker_based_norm",
                 "params": {
@@ -57,7 +58,10 @@
                     "padding": 2,
                     "dilation": 1,
                     "out_channels": 64,
-                    "number_of_kernels_per_marker": 64
+                    "bias": true,
+                    "epochs": 40,
+                    "lr": 1e-6,
+                    "wd": 1e-6
                 }
             },
             "activation2": {
