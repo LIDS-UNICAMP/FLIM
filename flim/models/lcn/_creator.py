@@ -1066,6 +1066,7 @@ class LCNCreator:
         return layer
 
     def _apply_conv_layer_to_input(self, layer, images, markers, is_3d, device="cpu"):
+        layer = layer.to(device)
         batch_size = self._batch_size
         if images is not None and markers is not None:
             torch_images = torch.from_numpy(images)
