@@ -1206,7 +1206,7 @@ def _generate_patches(images, markers, in_channels, kernel_size, dilation):
         markers_x = indices[0]
         markers_y = indices[1]
         if not is_2d:
-            markers_z = indices[2]
+            markers_z = indices[1]
         labels = image_markers[indices] - 1
 
         mask = np.logical_and(markers_x < image_shape[0], markers_y < image_shape[1])
@@ -1489,7 +1489,6 @@ def _compute_kernels_with_backpropagation(
             kernels = _select_kernels_with_pca(kernels, num_kernels)
             bias = np.zeros(num_kernels, dtype=np.float32)
             kernels = _kernels_to_channel_last(kernels)
-            print("Computing kernels with PCA")
             # TODO do not return form here
             return kernels, bias
 
@@ -1656,7 +1655,6 @@ def _initialize_convNd_weights(
                 kernels_weights = _select_kernels_with_pca(
                     kernels_weights, out_channels
                 )
-                print("Computing kernels with PCA")
 
             elif (out_channels is not None) and (
                 out_channels < kernels_weights.shape[0]
