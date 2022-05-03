@@ -937,6 +937,47 @@ class LCNCreator:
 
         return layer
 
+    def _apply_conv_layer_to_input(self, layer, images, markers, is_3d, device="cpu"):
+        batch_size = self._batch_size
+        if images is not None and markers is not None:
+            torch_images = torch.from_numpy(images)
+
+            if is_3d:
+                torch_images = torch_images.permute(0, 4, 3, 1, 2)
+            else:
+                torch_images = torch_images.permute(0, 3, 1, 2)
+
+            input_shape = torch_images.shape
+            input_size = input_shape[0]
+
+            outputs = torch.Tensor([])
+
+            # temporarly ignore warnings till pytorch is fixed
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with torch.no_grad():
+                    for i in range(0, input_size, batch_size):
+                        batch = torch_images[i : i + batch_size]
+                        batch = batch.to(device)
+                        output = layer(batch)
+                        output = output.detach().cpu()
+                        outputs = torch.cat((outputs, output))
+
+            if is_3d:
+                images = (
+                    outputs.permute(0, 3, 4, 2, 1)
+                    .detach()
+                    .numpy()[:, :, : input_shape[2], : input_shape[3], : input_shape[3]]
+                )
+            else:
+                images = (
+                    outputs.permute(0, 2, 3, 1)
+                    .detach()
+                    .numpy()[:, :, : input_shape[2], : input_shape[3]]
+                )
+
+            return images
+
     def get_LIDSConvNet(self):
         """Get the LIDSConvNet built.
 
@@ -1406,8 +1447,6 @@ def _calculate_convNd_weights(
     patches, labels = _generate_patches(
         images, markers, in_channels, kernel_size, dilation
     )
-
-
 
     axis = tuple(range(len(kernel_size) + 1))
 
