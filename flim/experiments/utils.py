@@ -57,7 +57,7 @@ def load_markers(markers_dir):
     if is_2d:
         image_shape = (label_infos[2], label_infos[1])
     else:
-        image_shape = (label_infos[1], label_infos[2], label_infos[3])
+        image_shape = (label_infos[2], label_infos[1], label_infos[3])
 
     markers = np.zeros(image_shape, dtype=int)
 
@@ -67,7 +67,7 @@ def load_markers(markers_dir):
             y, x, label = int(split_line[0]), int(split_line[1]), int(split_line[3])
             markers[x][y] = label
         else:
-            x, y, z, label = (
+            y, x, z, label = (
                 int(split_line[0]),
                 int(split_line[1]),
                 int(split_line[2]),
