@@ -2,12 +2,15 @@
 
 import setuptools
 
+__version__ = None
+exec(open("flim/_version.py").read())
+
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="FLIM",
-    version="0.1",
+    version=__version__,
     author="Italos Estilon de Souza",
     author_email="italosestilon@gmail.com",
     packages=setuptools.find_packages(),
