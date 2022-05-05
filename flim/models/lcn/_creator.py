@@ -504,20 +504,6 @@ class LCNCreator:
                     or layer_config["operation"] == "max_pool3d"
                     or layer_config["operation"] == "avg_pool3d"
                 ):
-                    dilation_due_to_pool = 1
-                    for node in self._digraph.dfs_from_vertex(module_name + "." + key):
-                        if (
-                            not node.is_module
-                            and node.arch
-                            and "pool" in node.arch["operation"]
-                        ):
-                            if node.arch["params"]["stride"] > 1:
-                                dilation_due_to_pool *= node.arch["params"]["stride"]
-
-                    original_dilation = operation_params.get("dilation", 1)
-                    layer_config["params"]["dilation"] = (
-                        dilation_due_to_pool * original_dilation
-                    )
 
                     layer, _ = self._build_pool_layer(
                         images, markers, batch_size, layer_config
@@ -682,9 +668,7 @@ class LCNCreator:
                     module_output_shape[2] -= 2 * self._remove_border
         return module, module_output_shape, images, markers
 
-    def _build_pool_layer(
-        self, images, markers, batch_size, layer_config, dilation_due_to_pool
-    ):
+    def _build_pool_layer(self, images, markers, batch_size, layer_config):
         device = self.device
         f_operations = {
             "max_pool2d": F.max_pool2d,
@@ -694,7 +678,6 @@ class LCNCreator:
         }
         operation_name = layer_config["operation"]
         operation_params = layer_config["params"]
-
         operation = __operations__[operation_name]
         f_pool = f_operations[operation_name]
 
@@ -702,7 +685,6 @@ class LCNCreator:
 
         stride = operation_params.get("stride", 1)
         kernel_size = operation_params["kernel_size"]
-        orginal_dilation = operation_params.get("dilation", 1)
 
         if "padding" in operation_params:
             padding = operation_params["padding"]
@@ -715,8 +697,6 @@ class LCNCreator:
             kernel_size = [kernel_size] * (3 if is_3d else 2)
 
         operation_params["stride"] = 1
-        operation_params["dilation"] = dilation_due_to_pool
-
         # TODO what about dilation?
         # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
 
@@ -759,7 +739,6 @@ class LCNCreator:
 
         operation_params["stride"] = stride
         operation_params["padding"] = padding
-        operation_params["dilation"] = orginal_dilation
         layer = operation(**operation_params)
         return layer, images
 
