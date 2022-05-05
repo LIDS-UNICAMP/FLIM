@@ -21,3 +21,4 @@ black
 pyflakes
 flake8
 pre-commit
+flake8-bugbear
