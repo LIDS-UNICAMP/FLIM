@@ -58,7 +58,6 @@ class LIDSConvNet(nn.Sequential):
             used to define the layer.
 
         """
-        self._logger.info("doing forward")
 
         for _, layer in self.named_children():
 
