@@ -1,54 +1,39 @@
 import json
-
+import math
 import os
+import re
 import warnings
+from collections import OrderedDict
+from math import floor
 
-
+import joblib
 import numpy as np
-
 import torch
-
-from torch.utils.data import DataLoader
-import torch.optim as optim
 import torch.nn as nn
-
+import torch.optim as optim
+from scipy.spatial.distance import cdist
+from sklearn import svm
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.metrics import (
+    cohen_kappa_score,
+    confusion_matrix,
+    f1_score,
+    precision_recall_fscore_support,
+)
+from sklearn.model_selection import train_test_split
+from termcolor import colored
+from torch.utils.data import DataLoader
 from torchvision.models import vgg16_bn
 from torchvision.transforms import Resize
 
-from sklearn.metrics import (
-    f1_score,
-    precision_recall_fscore_support,
-    cohen_kappa_score,
-    confusion_matrix,
-)
-from sklearn import svm
-from sklearn.cluster import MiniBatchKMeans
-from sklearn.model_selection import train_test_split
-
-from scipy.spatial.distance import cdist
-
-import joblib
-
-from termcolor import colored
-
-import math
-
-from math import floor
-
-from collections import OrderedDict
-
 from ..models.lcn import (
     LCNCreator,
+    LIDSConvNet,
     MarkerBasedNorm2d,
     MarkerBasedNorm3d,
-    LIDSConvNet,
     ParallelModule,
 )
-
 from ._dataset import LIDSDataset
-
-import re
-
 from ._image_utils import *
 
 ift = None
@@ -1030,7 +1015,11 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
 
     for i, w in enumerate(weights):
         cam += (
-            w * target[i, :,]
+            w
+            * target[
+                i,
+                :,
+            ]
         )
 
     cam[cam < 0] = 0.0

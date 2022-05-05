@@ -3,32 +3,26 @@
 import math
 import warnings
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from scipy.spatial import distance
 from skimage.util import view_as_windows
-
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import (
+    _euclidean_distances,
     cosine_similarity,
     euclidean_distances,
-    _euclidean_distances,
 )
-
-from scipy.spatial import distance
-
-import numpy as np
 from torch.nn.modules.loss import CrossEntropyLoss
 
-from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
-from ._lcn import LIDSConvNet, ParallelModule
-from ._decoder import Decoder
-
-from ...utils import label_connected_components
-
 from ..._constants import DIVISION_EPSILON
+from ...utils import label_connected_components
+from ._decoder import Decoder
+from ._lcn import LIDSConvNet, ParallelModule
+from ._marker_based_norm import MarkerBasedNorm2d, MarkerBasedNorm3d
 
 __all__ = ["LCNCreator"]
 
@@ -1385,8 +1379,6 @@ def _calculate_convNd_weights(
     patches, labels = _generate_patches(
         images, markers, in_channels, kernel_size, dilation
     )
-
-
 
     axis = tuple(range(len(kernel_size) + 1))
 

@@ -1,12 +1,19 @@
 repos:
--   repo: https://github.com/ambv/black
-    rev: 21.11b1
+-   repo: https://github.com/pycqa/isort
+    rev: '5.10.1'
+    hooks:
+    - id: isort
+      args: ['--profile', 'black']
+
+-   repo: https://github.com/psf/black
+    rev: '22.3.0'
     hooks:
     - id: black
-      language_version: python3.7
+
 -   repo: https://github.com/pycqa/flake8
     rev: '4.0.1'  # pick a git hash / tag to point to
     hooks:
-    -   id: flake8
-        additional_dependencies: [flake8-docstrings]
+    - id: flake8
+      additional_dependencies: [flake8-docstrings, flake8-bugbear]
+
 

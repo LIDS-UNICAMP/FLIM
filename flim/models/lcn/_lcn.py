@@ -2,8 +2,8 @@
 
 import logging
 import warnings
-import torch
 
+import torch
 import torch.nn as nn
 
 __all__ = ["LIDSConvNet", "ParallelModule"]

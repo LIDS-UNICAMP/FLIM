@@ -4,7 +4,6 @@ Helper functions to suport other modules.
 
 """
 import numpy as np
-
 from scipy.ndimage import label
 
 __all__ = ["label_connected_components", "compute_importance"]

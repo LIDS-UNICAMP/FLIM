@@ -4,15 +4,20 @@ torchvision
 setuptools
 scikit-image
 sklearn
-pylint
-pep8
-pyflakes
-mccabe
-pydocstyle
-flake8
-pylama
 termcolor 
 numba
 nibabel
 napari[pyqt5]
 magicgui
+
+# development
+isort
+mccabe
+pydocstyle
+pylama
+pylint
+pep8
+black
+pyflakes
+flake8
+pre-commit

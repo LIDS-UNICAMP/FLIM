@@ -1,17 +1,11 @@
 import argparse
-
 import os
-
 import shutil
 
-import torch
-
-import numpy as np
-
-import torchvision.transforms as transforms
-
 import matplotlib as mpl
-
+import numpy as np
+import torch
+import torchvision.transforms as transforms
 from skimage import io
 
 from ..experiments import utils

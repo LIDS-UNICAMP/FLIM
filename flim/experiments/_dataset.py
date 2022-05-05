@@ -1,14 +1,12 @@
-import warnings
 import os
-from ._image_utils import load_image
-
-from torch.utils.data import Dataset
-
-import torch
+import warnings
 
 import numpy as np
-
+import torch
 from skimage.color import rgb2lab
+from torch.utils.data import Dataset
+
+from ._image_utils import load_image
 
 try:
     import pyift.pyift as ift
