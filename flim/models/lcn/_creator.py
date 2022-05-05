@@ -369,8 +369,8 @@ class LCNCreator:
         module_params = module_arch.get("params", {})
 
         if module_type == "parallel":
-            module = ParallelModule()
             aggregate_fn = module_params["aggregate"]
+            module = ParallelModule(aggregate_fn=aggregate_fn)
         else:
             module = nn.Sequential()
 
@@ -411,7 +411,7 @@ class LCNCreator:
                     or layer_config["operation"] == "conv3d"
                 ):
                     # if bias then set training params
-                    if operation_params.get("bias", False) == True:
+                    if operation_params.get("bias", False) is True:
                         if "epochs" not in operation_params:
                             operation_params["epochs"] = module_params.get("epochs", 50)
                         if "lr" not in operation_params:
