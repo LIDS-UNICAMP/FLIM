@@ -699,7 +699,6 @@ class LCNCreator:
         operation_params["stride"] = 1
         # TODO what about dilation?
         # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
-
         if images is not None and markers is not None:
             torch_images = torch.from_numpy(images)
 

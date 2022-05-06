@@ -78,7 +78,6 @@ class LIDSConvNet(nn.Sequential):
 
 
 class ParallelModule(nn.ModuleList):
-
     """A module where every sub module is applied in parallel.
 
     Each sub module is applied in parallel and the output \

@@ -36,11 +36,10 @@ from ..models.lcn import (
 from ._dataset import LIDSDataset
 from ._image_utils import *
 
-ift = None
-
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
