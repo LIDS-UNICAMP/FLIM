@@ -1,18 +1,15 @@
 import warnings
 
-import numpy as np
-
-from skimage.color import gray2rgb, rgba2rgb, lab2rgb
-from skimage.util import img_as_float
-
-from PIL import Image
 import nibabel as nib
-
-ift = None
+import numpy as np
+from PIL import Image
+from skimage.color import gray2rgb, lab2rgb, rgba2rgb
+from skimage.util import img_as_float
 
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("pyift is not installed.", RuntimeWarning)
 
 __all__ = [

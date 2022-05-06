@@ -1,10 +1,8 @@
 import argparse
 
+import matplotlib as mpl
 import torch
 import torchvision.transforms as transforms
-
-import matplotlib as mpl
-
 from skimage import io
 
 from ..experiments import utils

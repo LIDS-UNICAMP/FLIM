@@ -2,8 +2,8 @@
 
 import logging
 import warnings
-import torch
 
+import torch
 import torch.nn as nn
 
 __all__ = ["LIDSConvNet", "ParallelModule"]
@@ -78,7 +78,6 @@ class LIDSConvNet(nn.Sequential):
 
 
 class ParallelModule(nn.ModuleList):
-
     """A module where every sub module is applied in parallel.
 
     Each sub module is applied in parallel and the output \
@@ -86,8 +85,14 @@ class ParallelModule(nn.ModuleList):
 
     """
 
-    def __init__(self):
+    def __init__(self, aggregate_fn="concat"):
         super(ParallelModule, self).__init__()
+        # check if aggregate_fn is valid
+        if aggregate_fn not in ["concat", "sum", "prod", "mean"]:
+            raise ValueError(
+                "aggregate_fn must be one of 'concat', 'sum', 'prod', 'mean'."
+            )
+        self._aggregate_fn = aggregate_fn
 
     def forward(self, x):
         """Apply the module to an input tensor.
@@ -105,7 +110,7 @@ class ParallelModule(nn.ModuleList):
         -------
         torch.Tensor
             Output tensor with shape :math:`(N, C^\prime,  H, W)`.
-            The output height and width depends on the paramenters \
+            The output height and width depends on the parameters \
             used to define the layer.
 
         """
@@ -115,4 +120,14 @@ class ParallelModule(nn.ModuleList):
         for module in self.children():
             outputs.append(module(x))
 
-        return torch.cat(outputs, 1)
+        y = None
+        if self._aggregate_fn == "concat":
+            y = torch.cat(outputs, dim=1)
+        elif self._aggregate_fn == "sum":
+            y = torch.sum(torch.stack(outputs, dim=1), dim=1)
+        elif self._aggregate_fn == "prod":
+            y = torch.prod(torch.stack(outputs, dim=1), dim=1)
+        elif self._aggregate_fn == "mean":
+            y = torch.mean(torch.stack(outputs, dim=1), dim=1)
+
+        return y

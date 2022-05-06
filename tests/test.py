@@ -1,14 +1,13 @@
-from collections import OrderedDict
 import unittest
-from unittest import TestCase
-
-from os import path
+from collections import OrderedDict
 from math import ceil
+from os import path
+from unittest import TestCase
 
 import torch
 
-from flim.models.lcn import LCNCreator, LIDSConvNet
 from flim.experiments import utils as flim_utils
+from flim.models.lcn import LCNCreator, LIDSConvNet
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -22,7 +21,9 @@ class TestBuildSimpleModel(TestCase):
             path.join(path.dirname(__file__), "data", "arch.json")
         )
 
-        creator = LCNCreator(architecture=arch, input_shape=[3], device=device)
+        creator = LCNCreator(
+            architecture=arch, input_shape=[224, 224, 3], device=device
+        )
         creator.build_model()
         model = creator.get_LIDSConvNet().to(device)
 
@@ -35,9 +36,8 @@ class TestBuildSimpleModel(TestCase):
         outputs = OrderedDict()
 
         # get output of each module
-        for name, module in model.named_children():
-            outputs[name] = module(fake_input)
-            fake_input = outputs[name]
+        outputs["features"] = model.features(fake_input)
+        outputs["classifier"] = model.classifier(outputs["features"].flatten(1))
 
         # check if output of each module is correct
         self.assertEqual(outputs["features"].shape, torch.Size([1, 27, 56, 56]))
@@ -128,9 +128,9 @@ class TestParallelModule(TestCase):
     def test_parallel_module_sum(self):
         arch = self._arch.copy()
         arch["module"]["params"]["aggregate"] = "sum"
-        arch["module"]["layers"]["conv1"]["out_channels"] = 16
-        arch["module"]["layers"]["conv2"]["out_channels"] = 16
-        arch["module"]["layers"]["conv3"]["out_channels"] = 16
+        arch["module"]["layers"]["conv1"]["params"]["out_channels"] = 16
+        arch["module"]["layers"]["conv2"]["params"]["out_channels"] = 16
+        arch["module"]["layers"]["conv3"]["params"]["out_channels"] = 16
 
         creator = LCNCreator(architecture=arch, input_shape=[3], device=device)
         creator.build_model()
@@ -144,9 +144,9 @@ class TestParallelModule(TestCase):
     def test_parallel_module_prod(self):
         arch = self._arch.copy()
         arch["module"]["params"]["aggregate"] = "prod"
-        arch["module"]["layers"]["conv1"]["out_channels"] = 16
-        arch["module"]["layers"]["conv2"]["out_channels"] = 16
-        arch["module"]["layers"]["conv3"]["out_channels"] = 16
+        arch["module"]["layers"]["conv1"]["params"]["out_channels"] = 16
+        arch["module"]["layers"]["conv2"]["params"]["out_channels"] = 16
+        arch["module"]["layers"]["conv3"]["params"]["out_channels"] = 16
 
         creator = LCNCreator(architecture=arch, input_shape=[3], device=device)
         creator.build_model()
@@ -164,7 +164,7 @@ class TestConvWithBias(TestCase):
             "module": {
                 "type": "sequential",
                 "flim_params": {
-                    "epochs": 30,
+                    "epochs": 2,
                     "lr": 0.001,
                     "wd": 0.9,
                 },

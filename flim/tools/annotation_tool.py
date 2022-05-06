@@ -1,37 +1,28 @@
-import warnings
-
 import argparse
-
-import napari
-
-import numpy as np
-
-from PIL import Image
-
-from skimage.segmentation import find_boundaries
-
-from magicgui import magicgui
-from magicgui.widgets import FloatSlider
-
+import warnings
 from contextlib import contextmanager
-
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QCursor
-from PyQt5.QtCore import Qt
-
-from numba import jit
-
 from os import path
 
-ift = None
+import napari
+import numpy as np
+from magicgui import magicgui
+from magicgui.widgets import FloatSlider
+from numba import jit
+from PIL import Image
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QCursor
+from PyQt5.QtWidgets import QApplication
+from skimage.segmentation import find_boundaries
+
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
-import torch
-
 import math
+
+import torch
 
 
 def get_arguments():

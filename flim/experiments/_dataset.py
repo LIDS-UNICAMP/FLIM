@@ -1,19 +1,18 @@
-import warnings
 import os
-from ._image_utils import load_image
-
-from torch.utils.data import Dataset
-
-import torch
+import warnings
 
 import numpy as np
-
+import torch
 from skimage.color import rgb2lab
+from torch.utils.data import Dataset
+
+from ._image_utils import load_image
 
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
     warnings.warn("PyIFT is not installed.", ImportWarning)
+    ift = None
 
 __all__ = ["LIDSDataset", "ToTensor", "ToLAB"]
 
