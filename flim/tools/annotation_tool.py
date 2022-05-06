@@ -14,10 +14,10 @@ from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import QApplication
 from skimage.segmentation import find_boundaries
 
-ift = None
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 import math
