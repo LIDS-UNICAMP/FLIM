@@ -109,6 +109,7 @@ class LCNCreator:
         remove_border=0,
         random_state=None,
         multilevel_clustering=True,
+        verbose=False,
     ):
         """Initialize the class.
 
@@ -157,6 +158,7 @@ class LCNCreator:
         self._input_shape = input_shape
         self._architecture = architecture
         self._multilevel_clustering = multilevel_clustering
+        self._verbose = verbose
 
         if images is None:
             self._in_channels = input_shape[-1]
@@ -328,7 +330,6 @@ class LCNCreator:
         input_shape=None,
         remove_similar_filters=False,
         similarity_level=0.85,
-        verbose=True,
     ):
         """Builds a module.
 
@@ -382,7 +383,7 @@ class LCNCreator:
             new_module_name = key if module_name is None else f"{module_name}.{key}"
 
             layer_config = layers_arch[key]
-            if verbose:
+            if self._verbose:
                 print(f"Building {key}")
 
             if "type" in layer_config:
@@ -699,7 +700,6 @@ class LCNCreator:
         operation_params["stride"] = 1
         # TODO what about dilation?
         # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
-
         if images is not None and markers is not None:
             torch_images = torch.from_numpy(images)
 
@@ -870,6 +870,7 @@ class LCNCreator:
             wd=wd,
             multi_level_clustering=self._multilevel_clustering,
             device=self.device,
+            verbose=self._verbose,
         )
         if out_channels is not None:
             assert (
@@ -1355,6 +1356,7 @@ def _calculate_convNd_weights(
     use_pca,
     multilevel_clustering,
     device="cpu",
+    verbose=False,
 ):
     """Calculate kernels weights from image markers.
 
@@ -1406,6 +1408,7 @@ def _calculate_convNd_weights(
             use_pca,
             multilevel_clustering,
             device,
+            verbose,
         )
     else:
         kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
@@ -1440,6 +1443,7 @@ def _compute_kernels_with_backpropagation(
     use_pca=True,
     multi_level_clustering=True,
     device="cpu",
+    verbose=False,
 ):
     patches_shape = patches.shape
     patches = patches.reshape(patches_shape[0], -1)
@@ -1509,7 +1513,8 @@ def _compute_kernels_with_backpropagation(
     true_labels = torch.from_numpy(labels).long().to(device)
 
     optim = torch.optim.Adam(lin_layer.parameters(), lr=lr, weight_decay=wd)
-    print("Building layer...")
+    if verbose:
+        print("Building layer...")
     for epoch in range(epochs):
         loss_epoch = 0.0
 
@@ -1525,8 +1530,11 @@ def _compute_kernels_with_backpropagation(
 
         loss_epoch = loss.item()
 
-        acc = np.mean(preds.detach().cpu().numpy() == labels)
-        print("Epoch {}: loss = {}, accuracy = {}".format(epoch, loss_epoch, acc))
+        if verbose:
+            with torch.no_grad():
+                acc = np.mean(preds.detach().cpu().numpy() == labels)
+
+            print("Epoch {}: loss = {}, accuracy = {}".format(epoch, loss_epoch, acc))
 
         if loss_epoch < 0.01:
             break
@@ -1554,6 +1562,7 @@ def _initialize_convNd_weights(
     wd=0.9,
     multi_level_clustering=True,
     device="cpu",
+    verbose=False,
 ):
     """Learn kernel weights from image markers.
 
@@ -1607,6 +1616,7 @@ def _initialize_convNd_weights(
             use_pca=use_pca,
             multilevel_clustering=multi_level_clustering,
             device=device,
+            verbose=verbose,
         )
         if bias:
             kernels_weights, bias_weights = weights

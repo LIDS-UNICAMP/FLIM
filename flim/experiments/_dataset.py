@@ -10,8 +10,9 @@ from ._image_utils import load_image
 
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
     warnings.warn("PyIFT is not installed.", ImportWarning)
+    ift = None
 
 __all__ = ["LIDSDataset", "ToTensor", "ToLAB"]
 
