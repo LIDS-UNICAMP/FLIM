@@ -6,11 +6,10 @@ from PIL import Image
 from skimage.color import gray2rgb, lab2rgb, rgba2rgb
 from skimage.util import img_as_float
 
-ift = None
-
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("pyift is not installed.", RuntimeWarning)
 
 __all__ = [
@@ -105,9 +104,9 @@ def load_image(path: str, lab: bool = True) -> np.ndarray:
         if ift.Is3DImage(image):
             if lab:
                 mimage = ift.ImageToMImage(image, color_space=ift.LABNorm2_CSPACE)
-                image = mimage.AsNumPy().transpose(1, 2, 0, 3)
+                image = mimage.AsNumPy()
             else:
-                image = image.AsNumPy().transpose(1, 2, 0)
+                image = image.AsNumPy()
             image = image.squeeze()
         else:  # 2D Image
             # Apparently, load_and_convert_2d_images and
