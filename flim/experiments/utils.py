@@ -25,6 +25,8 @@ from termcolor import colored
 from torch.utils.data import DataLoader
 from torchvision.models import vgg16_bn
 from torchvision.transforms import Resize
+from torch.nn.modules.conv import Conv3d
+from torch.nn.modules.conv import Conv2d
 
 from ..models.lcn import (
     LCNCreator,
@@ -36,11 +38,10 @@ from ..models.lcn import (
 from ._dataset import LIDSDataset
 from ._image_utils import *
 
-ift = None
-
 try:
     import pyift.pyift as ift
-except:
+except ModuleNotFoundError:
+    ift = None
     warnings.warn("PyIFT is not installed.", ImportWarning)
 
 
@@ -587,7 +588,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
     return model
 
 
-def save_lids_model(model, architecture, split, outputs_dir, model_name):
+def save_lids_model(model, architecture, outputs_dir, model_name):
     if not isinstance(model, LIDSConvNet):
         pass
 
@@ -599,29 +600,27 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
     if not os.path.exists(os.path.join(outputs_dir, model_name)):
         os.makedirs(os.path.join(outputs_dir, model_name))
 
-    if isinstance(split, str):
-        split_basename = os.path.basename(split)
-
-        split = re.findall(r"\d+", split_basename)
-
-        if len(split) == 0:
-            split = 1
-        else:
-            split = int(split[0])
-
-    layer_specs = get_arch_in_lids_format(architecture, split)
+    layer_specs = get_arch_in_lids_format(architecture)
     conv_count = 1
     for _, layer in model.named_children():
-        if isinstance(layer, SpecialConvLayer):
-            weights = layer.conv.weight.detach().cpu()
+        if isinstance(layer, nn.Sequential):
+            norm_index = 0
+            conv_index = 0
+            for i in range(len(layer)):
+                if ((isinstance(layer[i], MarkerBasedNorm3d)) or (isinstance(layer[i], MarkerBasedNorm3d))):
+                    norm_index = i
+                elif ((isinstance(layer[i], Conv3d)) or (isinstance(layer[i], Conv2d))):
+                    conv_index = i
+
+            weights = layer[conv_index].weight.detach().cpu()
 
             num_kernels = weights.size(0)
             weights = weights.reshape(num_kernels, -1)
 
             weights = weights.transpose(0, 1)
 
-            mean = layer.mean_by_channel.detach().cpu()
-            std = layer.std_by_channel.detach().cpu()
+            mean = layer[norm_index].mean_by_channel.detach().cpu()
+            std = layer[norm_index].std_by_channel.detach().cpu()
 
             mean = mean.reshape(1, -1)
             std = std.reshape(1, -1)
@@ -663,7 +662,6 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
             np.save(os.path.join(outputs_dir, model_name, f"{name}-weights.npy"), weights.float())
             np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-mean.txt"), mean.float())
             np.savetxt(os.path.join(outputs_dir, model_name, f"{name}-std.txt"), std.float())"""
-
 
 def _calulate_metrics(true_labels, pred_labels):
     average = "binary" if np.unique(true_labels).shape[0] == 2 else "weighted"
@@ -1165,84 +1163,174 @@ def save_intermediate_outputs(
             save_opf_dataset(_output_dir, opf_dataset)
 
 
-def get_arch_in_lids_format(architecture, split):
+def get_arch_in_lids_format(architecture):
 
     layer_names = list(architecture["features"]["layers"].keys())
 
     layers = architecture["features"]["layers"]
 
-    operations = [layers[layer_name]["operation"] for layer_name in layer_names]
-    conv_layers_count = 1
-
     lids_layer_specs = []
-    for i in range(len(layer_names)):
-        layer_spec = {}
-        if operations[i] == "conv2d":
+    conv_layers_count = 1
+    if ("operation" not in layer_names):
+        for b in range(len(layer_names)): #blocks
+            block_id = "block%d" % (b+1)
+            block_names = list(architecture["features"]["layers"][block_id]["layers"].keys())
+            blocks = architecture["features"]["layers"][block_id]["layers"]
+            operations = [blocks[block_name]["operation"] for block_name in block_names]
 
-            params = layers[layer_names[i]]["params"]
-            kernel_size = params["kernel_size"]
-            dilation = params["kernel_size"]
-            number_of_kernels_per_markers = params.get(
-                "number_of_kernels_per_marker", 8
-            )
-            out_channels = params["out_channels"]
+            for i in range(len(operations)):
+                layer_spec = {}
+                if "conv" in operations[i]:
 
-            layer_spec["layer"] = conv_layers_count
-            layer_spec["split"] = split
+                    params = blocks[block_names[i]]["params"]
+                    kernel_size = params["kernel_size"]
+                    dilation = params["kernel_size"]
+                    number_of_kernels_per_markers = params.get(
+                        "number_of_kernels_per_marker", 8
+                    )
+                    out_channels = params["out_channels"]
 
-            if isinstance(kernel_size, int):
-                layer_spec["kernelsize"] = [kernel_size, kernel_size, 0]
-            else:
-                layer_spec["kernelsize"] = [*kernel_size, 0]
+                    layer_spec["layer"] = conv_layers_count
 
-            if isinstance(dilation, int):
-                layer_spec["dilationrate"] = [dilation, dilation, 0]
-            else:
-                layer_spec["dilationrate"] = [*dilation, 0]
+                    if isinstance(kernel_size, int):
+                        if (operations[i] == "conv2d"):
+                            layer_spec["kernelsize"] = [kernel_size, kernel_size, 0]
+                        elif (operations[i] == "conv3d"):
+                            layer_spec["kernelsize"] = [kernel_size, kernel_size, kernel_size]
+                    else:
+                        if (operations[i] == "conv2d"):
+                            layer_spec["kernelsize"] = [*kernel_size, 0]
+                        elif (operations[i] == "conv3d"):
+                            layer_spec["kernelsize"] = [*kernel_size]
 
-            layer_spec["nkernelspermarker"] = number_of_kernels_per_markers
-            layer_spec["finalnkernels"] = out_channels
-            layer_spec["nkernelsperimage"] = 10000
+                    if isinstance(dilation, int):
+                        if (operations[i] == "conv2d"):
+                            layer_spec["dilationrate"] = [dilation, dilation, 0]
+                        elif (operations[i] == "conv3d"):
+                            layer_spec["dilationrate"] = [dilation, dilation, dilation]
+                    else:
+                        if (operations[i] == "conv2d"):
+                            layer_spec["dilationrate"] = [*dilation, 0]
+                        elif (operations[i] == "conv3d"):
+                            layer_spec["dilationrate"] = [*dilation]
 
-            if i + 1 < len(layer_names) and operations[i + 1] == "relu":
-                layer_spec["relu"] = 1
-            else:
-                layer_spec["relu"] = 0
+                    layer_spec["nkernelspermarker"] = number_of_kernels_per_markers
+                    layer_spec["finalnkernels"] = out_channels
+                    layer_spec["nkernelsperimage"] = 10000
 
-            conv_layers_count += 1
+                if (operations[i] == "relu"):
 
-            j = i + 1 if layer_spec["relu"] == 0 else i + 2
+                    params = blocks[block_names[i]]["params"]
+                    inplace = params["inplace"]
 
-            pool_spec = {}
+                    layer_spec["relu"] = inplace
 
-            if j < len(layer_names) and "pool" in operations[j]:
-                if operations[j] == "max_pool2d":
-                    pool_spec["pool_type"] = 2
-                elif operations[j] == "avg_pool2d":
-                    pool_spec["pool_type"] = 1
+                if ("pool" in operations[i]):
 
-                pool_params = layers[layer_names[j]]["params"]
+                    pool_spec = {}
 
-                kernel_size = pool_params["kernel_size"]
-                stride = pool_params["stride"]
+                    if ("max_pool" in operations[i]):
+                        pool_spec["pool_type"] = 2
+                    elif ("avg_pool" in operations[i]):
+                        pool_spec["pool_type"] = 1
+                    elif ("no_pool" == operations[i]):
+                        pool_spec["pool_type"] = 0
 
-                if isinstance(kernel_size, int):
-                    kernel_size = [kernel_size, kernel_size]
+                    pool_params = blocks[block_names[i]]["params"]
 
-                pool_spec["poolxsize"] = kernel_size[0]
-                pool_spec["poolysize"] = kernel_size[1]
-                pool_spec["poolzsize"] = 0
+                    kernel_size = pool_params["kernel_size"]
+                    stride = pool_params["stride"]
+ 
+                    if isinstance(kernel_size, int):
+                        kernel_size = [kernel_size, kernel_size]
 
-                pool_spec["stride"] = stride
-            else:
-                pool_spec["pool_type"] = 0
+                    if ("2d" in operations[i]):
+                        pool_spec["poolxsize"] = kernel_size[0]
+                        pool_spec["poolysize"] = kernel_size[1]
+                        pool_spec["poolzsize"] = 0
+                    elif ("3d" in operations[i]):
+                        pool_spec["poolxsize"] = kernel_size[0]
+                        pool_spec["poolysize"] = kernel_size[1]
+                        pool_spec["poolzsize"] = kernel_size[2]
 
-            layer_spec["pooling"] = pool_spec
+                    pool_spec["stride"] = stride
+
+                    layer_spec["pooling"] = pool_spec
 
             lids_layer_specs.append(layer_spec)
 
-    return lids_layer_specs
+            conv_layers_count += 1
 
+    else:
+        operations = [layers[layer_name]["operation"] for layer_name in layer_names]
+        conv_layers_count = 1
+
+        for i in range(len(layer_names)):
+            layer_spec = {}
+            if operations[i] == "conv2d":
+
+                params = layers[layer_names[i]]["params"]
+                kernel_size = params["kernel_size"]
+                dilation = params["kernel_size"]
+                number_of_kernels_per_markers = params.get(
+                    "number_of_kernels_per_marker", 8
+                )
+                out_channels = params["out_channels"]
+
+                layer_spec["layer"] = conv_layers_count
+
+                if isinstance(kernel_size, int):
+                    layer_spec["kernelsize"] = [kernel_size, kernel_size, 0]
+                else:
+                    layer_spec["kernelsize"] = [*kernel_size, 0]
+
+                if isinstance(dilation, int):
+                    layer_spec["dilationrate"] = [dilation, dilation, 0]
+                else:
+                    layer_spec["dilationrate"] = [*dilation, 0]
+
+                layer_spec["nkernelspermarker"] = number_of_kernels_per_markers
+                layer_spec["finalnkernels"] = out_channels
+                layer_spec["nkernelsperimage"] = 10000
+
+                if i + 1 < len(layer_names) and operations[i + 1] == "relu":
+                    layer_spec["relu"] = 1
+                else:
+                    layer_spec["relu"] = 0
+
+                conv_layers_count += 1
+
+                j = i + 1 if layer_spec["relu"] == 0 else i + 2
+
+                pool_spec = {}
+
+                if j < len(layer_names) and "pool" in operations[j]:
+                    if operations[j] == "max_pool2d":
+                        pool_spec["pool_type"] = 2
+                    elif operations[j] == "avg_pool2d":
+                        pool_spec["pool_type"] = 1
+
+                    pool_params = layers[layer_names[j]]["params"]
+
+                    kernel_size = pool_params["kernel_size"]
+                    stride = pool_params["stride"]
+
+                    if isinstance(kernel_size, int):
+                        kernel_size = [kernel_size, kernel_size]
+
+                    pool_spec["poolxsize"] = kernel_size[0]
+                    pool_spec["poolysize"] = kernel_size[1]
+                    pool_spec["poolzsize"] = 0
+
+                    pool_spec["stride"] = stride
+                else:
+                    pool_spec["pool_type"] = 0
+
+                layer_spec["pooling"] = pool_spec
+
+                lids_layer_specs.append(layer_spec)
+
+    return lids_layer_specs
 
 def create_arch(layers_dir):
     layers_info_files = [f for f in os.listdir(layers_dir) if f.endswith(".json")]
