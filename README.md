@@ -115,7 +115,7 @@ Every layer must be specified as follows:
 ``` 
 To know which parameters for each type of operation, just look at the [PyTorch documentation](https://pytorch.org/docs/stable/nn.html). All parameters specified there are supported with the same name.
 
-A layer with the "conv2d" operation accepts a few more fields: "activation" and "pool". These fields can be used to define an activation function and pooling operation, but these operations can be specified outside the convolucioal layer as well. A convolutional layer also has a "number_of_kernels_per_marker" parameter that determines the number of kernels that must be created from the markers.
+Convolutional and pooling layers have a parameter called "train_dilation" that must be set to "true" if the layer must used dilated kernels during training due to previous pooling layers. A convolutional layer also has a "number_of_kernels_per_marker" parameter that determines the number of kernels that must be created from the markers.
 
 An example of a classifier follows:
 

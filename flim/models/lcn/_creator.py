@@ -76,6 +76,100 @@ class LabelSmoothingLoss(nn.Module):
         return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
 
 
+class NetworkNode:
+    def __init__(self, name, arch, is_module):
+        self._name = name
+        self._arch = arch
+        self._is_module = is_module
+        self._neighbors = []
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def arch(self):
+        return self._arch
+
+    @property
+    def is_module(self):
+        return self._is_module
+
+    @property
+    def neighbors(self):
+        return self._neighbors
+
+    def add_neighbor(self, neighbor):
+        self._neighbors.append(neighbor)
+
+    def __str__(self):
+        return f"Node(name={self._name}, is_module={self._is_module})"
+
+
+class NetworkDiGraph:
+    def __init__(self, arch):
+        self._arch = arch
+        self._vertex_dict = {}
+
+        self._create_digraph_representation()
+
+    def _create_module_digraph_representation(self, parent_node, module_name, arch):
+        module_type = arch.get("type", "sequential")
+        module_layer = []
+
+        layers_arch = arch["layers"]
+        module_layer.append(parent_node)
+
+        has_non_module_layer = False
+        for key in layers_arch:
+            layer_config = layers_arch[key]
+            if "type" in layer_config:
+                last_node = self._create_module_digraph_representation(
+                    module_layer[-1], module_name + "." + key, layer_config
+                )
+                module_layer.append(last_node)
+            else:
+                node_name = module_name + "." + key
+                node = NetworkNode(node_name, layer_config, is_module=False)
+                self._vertex_dict[node_name] = node
+                module_layer.append(node)
+                has_non_module_layer = True
+
+        if has_non_module_layer:
+            if module_type == "sequential":
+                reversed_module_layer = list(reversed(module_layer))
+                for i, node in enumerate(reversed_module_layer[:-1]):
+                    node.add_neighbor(reversed_module_layer[i + 1])
+
+            # elif module_type == "parallel":
+            #     for node in module_layer:
+            #         node.add_neighbor(module_node)
+        return module_layer[-1]
+
+    def _create_digraph_representation(self):
+        source_node = NetworkNode("input", None, is_module=False)
+        self._vertex_dict["input"] = source_node
+
+        for module_name, arch in self._arch.items():
+            self._create_module_digraph_representation(source_node, module_name, arch)
+
+    @property
+    def vertices(self):
+        return self._vertex_dict
+
+    def dfs_from_vertex(self, vertex_name):
+        vertex = self._vertex_dict[vertex_name]
+        visited = set()
+        stack = []
+        stack.extend(vertex.neighbors)
+        while stack:
+            vertex = stack.pop()
+            if vertex not in visited:
+                visited.add(vertex)
+                yield vertex
+                stack.extend(vertex.neighbors)
+
+
 class LCNCreator:
 
     """Class to build and a LIDSConvNet.
@@ -186,6 +280,7 @@ class LCNCreator:
             outputs_to_save=self._to_save_outputs,
             remove_boder=remove_border,
         )
+        self._digraph = NetworkDiGraph(self._architecture)
 
     def build_model(
         self,
@@ -420,6 +515,27 @@ class LCNCreator:
                         if "wd" not in operation_params:
                             operation_params["wd"] = module_params.get("wd", 0.9)
 
+                    # check if there is a pool operation with stride > 1 before convolution
+                    dilation_due_to_pool = 1
+                    if operation_params.get("train_dilation", False) is True:
+                        for node in self._digraph.dfs_from_vertex(
+                            module_name + "." + key
+                        ):
+                            if (
+                                not node.is_module
+                                and node.arch
+                                and "pool" in node.arch["operation"]
+                            ):
+                                if node.arch["params"]["stride"] > 1:
+                                    dilation_due_to_pool *= node.arch["params"][
+                                        "stride"
+                                    ]
+
+                    original_dilation = operation_params.get("dilation", 1)
+                    layer_config["params"]["dilation"] = (
+                        dilation_due_to_pool * original_dilation
+                    )
+
                     layer = self._build_conv_layer(
                         images,
                         markers,
@@ -428,8 +544,11 @@ class LCNCreator:
                         input_shape,
                         layer_config,
                     )
+
                     is_3d = layer_config["operation"] == "conv3d"
                     end = 3 if is_3d else 2
+                    # chage dilation to original value
+                    layer_config["params"]["dilation"] = original_dilation
 
                     if len(input_shape) > 1:
                         _layer_output_shape = [*input_shape[:end], layer.out_channels]
@@ -505,9 +624,23 @@ class LCNCreator:
                     or layer_config["operation"] == "max_pool3d"
                     or layer_config["operation"] == "avg_pool3d"
                 ):
+                    dilation_due_to_pool = 1
+                    if operation_params.get("train_dilation", False) is True:
+                        for node in self._digraph.dfs_from_vertex(
+                            module_name + "." + key
+                        ):
+                            if (
+                                not node.is_module
+                                and node.arch
+                                and "pool" in node.arch["operation"]
+                            ):
+                                if node.arch["params"]["stride"] > 1:
+                                    dilation_due_to_pool *= node.arch["params"][
+                                        "stride"
+                                    ]
 
                     layer, _ = self._build_pool_layer(
-                        images, markers, batch_size, layer_config
+                        images, markers, batch_size, layer_config, dilation_due_to_pool
                     )
 
                     is_3d = "3d" in layer_config["operation"]
@@ -669,7 +802,9 @@ class LCNCreator:
                     module_output_shape[2] -= 2 * self._remove_border
         return module, module_output_shape, images, markers
 
-    def _build_pool_layer(self, images, markers, batch_size, layer_config):
+    def _build_pool_layer(
+        self, images, markers, batch_size, layer_config, dilation_due_to_pool
+    ):
         device = self.device
         f_operations = {
             "max_pool2d": F.max_pool2d,
@@ -681,23 +816,23 @@ class LCNCreator:
         operation_params = layer_config["params"]
         operation = __operations__[operation_name]
         f_pool = f_operations[operation_name]
+        original_dilation = operation_params.get("dilation", 1)
 
         is_3d = "3d" in operation_name
 
         stride = operation_params.get("stride", 1)
         kernel_size = operation_params["kernel_size"]
+        padding = operation_params.get("padding", 0)
+        dilation = dilation_due_to_pool * original_dilation
 
-        if "padding" in operation_params:
-            padding = operation_params["padding"]
-            if isinstance(padding, int):
-                padding = [padding] * (3 if is_3d else 2)
-        else:
-            padding = [0] * (3 if is_3d else 2)
+        if isinstance(padding, int):
+            padding = [padding] * (3 if is_3d else 2)
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * (3 if is_3d else 2)
 
         operation_params["stride"] = 1
+        operation_params["dilation"] = dilation_due_to_pool
         # TODO what about dilation?
         # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
         if images is not None and markers is not None:
@@ -720,7 +855,13 @@ class LCNCreator:
                     for i in range(0, input_size, batch_size):
                         batch = torch_images[i : i + batch_size]
                         batch = batch.to(device)
-                        output = f_pool(batch, **operation_params)
+                        output = f_pool(
+                            batch,
+                            kernel_size=kernel_size,
+                            stride=stride,
+                            padding=padding,
+                            dilation=dilation,
+                        )
                         output = output.detach().cpu()
                         outputs = torch.cat((outputs, output))
 
@@ -739,7 +880,11 @@ class LCNCreator:
 
         operation_params["stride"] = stride
         operation_params["padding"] = padding
-        layer = operation(**operation_params)
+        operation_params["dilation"] = original_dilation
+        dilation = original_dilation
+        layer = operation(
+            kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation
+        )
         return layer, images
 
     def _build_m_norm_layer(self, images, markers, input_shape, layer_config):
