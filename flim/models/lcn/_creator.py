@@ -191,6 +191,7 @@ class LCNCreator:
         self,
         remove_similar_filters: bool = False,
         similarity_level: float = 0.85,
+        state_dict: dict = None,
         verbose: bool = False,
     ):
         """Build the model.
@@ -237,6 +238,7 @@ class LCNCreator:
                 input_shape,
                 remove_similar_filters=remove_similar_filters,
                 similarity_level=similarity_level,
+                state_dict=state_dict,
             )
 
             input_shape = module_output_shape
@@ -330,6 +332,7 @@ class LCNCreator:
         input_shape=None,
         remove_similar_filters=False,
         similarity_level=0.85,
+        state_dict=None,
     ):
         """Builds a module.
 
@@ -344,16 +347,15 @@ class LCNCreator:
         markers : ndarray
             A set of image markes as label images with size :math:`(N, H, W)`.\
             The label 0 denote no label.
-        state_dict: OrderedDict
-            If images and markers are None, this argument must be given,\
-            by default None.
-        ----------
         remove_similar_filters : bool, optional
             Keep only one of a set of similar filters, by default False.
         similarity_level : float, optional
             A value in range :math:`(0, 1]`. \
             If filters have inner product greater than value, \
             only one of them are kept. by default 0.85.
+        state_dict: OrderedDict
+            If given, layers will get theirs weights from it,\
+            by default None.
 
         Returns
         -------
@@ -420,14 +422,54 @@ class LCNCreator:
                         if "wd" not in operation_params:
                             operation_params["wd"] = module_params.get("wd", 0.9)
 
-                    layer = self._build_conv_layer(
-                        images,
-                        markers,
-                        remove_similar_filters,
-                        similarity_level,
-                        input_shape,
-                        layer_config,
-                    )
+                    # check is state_dict has the weights for this layer
+                    if (
+                        state_dict is not None
+                        and f"{new_module_name}.weight" in state_dict
+                    ):
+                        weights = state_dict[f"{new_module_name}.weight"]
+
+                        layer = self._build_conv_layer(
+                            None,
+                            None,
+                            remove_similar_filters,
+                            similarity_level,
+                            input_shape,
+                            layer_config,
+                        )
+
+                        layer.weight.data = weights
+
+                        if (
+                            f"{new_module_name}.bias" in state_dict
+                            and layer.bias is not None
+                        ):
+                            bias = state_dict[f"{new_module_name}.bias"]
+                            layer.bias.data = bias
+                        elif (
+                            operation_params.get("bias", False) is True
+                            and not f"{new_module_name}.bias" in state_dict
+                        ):
+                            warnings.warn(
+                                "Bias is not found in state_dict. "
+                                "It will be initialized with zeros.",
+                                UserWarning,
+                                stacklevel=2,
+                            )
+                            layer.bias.data = torch.zeros(
+                                layer.bias.data.shape, device=device
+                            )
+
+                    else:
+                        layer = self._build_conv_layer(
+                            images,
+                            markers,
+                            remove_similar_filters,
+                            similarity_level,
+                            input_shape,
+                            layer_config,
+                        )
+
                     is_3d = layer_config["operation"] == "conv3d"
                     end = 3 if is_3d else 2
 
@@ -465,10 +507,33 @@ class LCNCreator:
                             DeprecationWarning,
                             stacklevel=2,
                         )
+                    # check is state_dict has the weights for this layer
+                    if (
+                        state_dict is not None
+                        and f"{new_module_name}.mean_by_channel" in state_dict
+                        and f"{new_module_name}.std_by_channel" in state_dict
+                    ):
 
-                    layer = self._build_m_norm_layer(
-                        images, markers, input_shape, layer_config
-                    )
+                        weights = state_dict[f"{new_module_name}.weight"]
+                        bias = state_dict[f"{new_module_name}.bias"]
+                        mean_by_channel = state_dict[
+                            f"{new_module_name}.mean_by_channel"
+                        ]
+                        std_by_channel = state_dict[f"{new_module_name}.std_by_channel"]
+
+                        layer = self._build_m_norm_layer(
+                            None, None, input_shape, layer_config,
+                        )
+                        layer.weight.data = weights
+                        layer.bias.data = bias
+                        layer.mean_by_channel.data = mean_by_channel
+                        layer.std_by_channel.data = std_by_channel
+
+                    else:
+
+                        layer = self._build_m_norm_layer(
+                            images, markers, input_shape, layer_config
+                        )
 
                     _layer_output_shape = input_shape
 
@@ -480,6 +545,27 @@ class LCNCreator:
                     operation_params["num_features"] = input_shape[-1]
 
                     layer = operation(**operation_params)
+                    if state_dict is not None:
+                        if (
+                            f"{new_module_name}.running_mean" in state_dict
+                            and f"{new_module_name}.running_var" in state_dict
+                        ):
+                            running_mean = state_dict[f"{new_module_name}.running_mean"]
+                            running_var = state_dict[f"{new_module_name}.running_var"]
+                            weights = state_dict[f"{new_module_name}.weight"]
+                            bias = state_dict[f"{new_module_name}.bias"]
+
+                            layer.running_mean = running_mean
+                            layer.running_var = running_var
+                            layer.weight.data = weights
+                            layer.bias.data = bias
+
+                            layer.eval()
+                        else:
+                            layer.train()
+                    else:
+                        layer.train()
+
                     layer.train()
                     layer = layer.to(device)
                     is_3d = "3d" in layer_config["operation"]
