@@ -35,7 +35,7 @@ setuptools.setup(
         "torchvision",
         "numpy>=1.20",
         "scikit-image",
-        "sklearn",
+        "sklearn>=1.0.2",
         "setuptools",
         "numba",
         "termcolor",
