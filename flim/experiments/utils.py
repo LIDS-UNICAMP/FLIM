@@ -25,6 +25,8 @@ from termcolor import colored
 from torch.utils.data import DataLoader
 from torchvision.models import vgg16_bn
 from torchvision.transforms import Resize
+from torch.nn.modules.conv import Conv3d
+from torch.nn.modules.conv import Conv2d
 
 from ..models.lcn import (
     LCNCreator,
@@ -512,9 +514,8 @@ def load_weights_from_lids_model(model, lids_model_dir):
 
                 weights = weights.transpose()
                 weights = weights.reshape(
-                    out_channels, kernel_size[1], kernel_size[0], in_channels
+                    out_channels, in_channels, kernel_size[1], kernel_size[0],
                 )
-                weights = weights.transpose(0, 3, 2, 1)
 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
 
@@ -530,12 +531,11 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 weights = weights.transpose()
                 weights = weights.reshape(
                     out_channels,
+                    in_channels,
                     kernel_size[0],
                     kernel_size[1],
                     kernel_size[2],
-                    in_channels,
                 )
-                weights = weights.transpose(0, 4, 3, 2, 1)
 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
 
@@ -559,34 +559,11 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 torch.from_numpy(std.reshape(1, -1, 1, 1, 1)).float()
             )
 
-    """for name, layer in model.classifier.named_children():
-        print(name)
-        if isinstance(layer, SpecialLinearLayer):
-            if os.path.exists(os.path.join(lids_model_dir, f"{name}-weights.npy")):
-                weights = np.load(os.path.join(lids_model_dir,
-                                            f"split{split}-{name}-weights.npy"))
-                weights = weights.transpose()
-                
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-mean.txt")) as f:
-                    lines = f.readlines()
-                    mean = np.array([float(line) for line in lines])
-                    
-                with open(os.path.join(lids_model_dir,
-                                            f"{name}-stdev.txt")) as f:
-                    lines = f.readlines()
-                    std = np.array([float(line) for line in lines])
-                    
-                layer.mean = torch.from_numpy(mean.reshape(1, -1)).float()
-                layer.std = torch.from_numpy(std.reshape(1, -1)).float()
-                
-                layer._linear.weight = nn.Parameter(torch.from_numpy(weights).float())"""
-
     print("Finish loading...")
     return model
 
 
-def save_lids_model(model, architecture, split, outputs_dir, model_name):
+def save_lids_model(model, architecture, outputs_dir, model_name):
     if not isinstance(model, LIDSConvNet):
         pass
 
@@ -598,47 +575,47 @@ def save_lids_model(model, architecture, split, outputs_dir, model_name):
     if not os.path.exists(os.path.join(outputs_dir, model_name)):
         os.makedirs(os.path.join(outputs_dir, model_name))
 
-    if isinstance(split, str):
-        split_basename = os.path.basename(split)
-
-        split = re.findall(r"\d+", split_basename)
-
-        if len(split) == 0:
-            split = 1
-        else:
-            split = int(split[0])
-
-    layer_specs = get_arch_in_lids_format(architecture, split)
+    layer_specs = get_arch_in_lids_format(architecture)
     conv_count = 1
     for _, layer in model.named_children():
-        if isinstance(layer, SpecialConvLayer):
-            weights = layer.conv.weight.detach().cpu()
+        print(layer,type(layer))
+        if isinstance(layer, nn.Sequential):
+            norm_index = 0
+            conv_index = 0
+            for i in range(len(layer)):
+                if (isinstance(layer[i], (MarkerBasedNorm3d,MarkerBasedNorm2d))):
+                    norm_index = i
+                    conv_index = i+1
+                else:
+                    continue
 
-            num_kernels = weights.size(0)
-            weights = weights.reshape(num_kernels, -1)
+                weights = layer[conv_index].weight.detach().cpu()
 
-            weights = weights.transpose(0, 1)
+                num_kernels = weights.size(0)
+                weights = weights.reshape(num_kernels, -1)
 
-            mean = layer.mean_by_channel.detach().cpu()
-            std = layer.std_by_channel.detach().cpu()
+                weights = weights.transpose(0, 1)
 
-            mean = mean.reshape(1, -1)
-            std = std.reshape(1, -1)
+                mean = layer[norm_index].mean_by_channel.detach().cpu()
+                std = layer[norm_index].std_by_channel.detach().cpu()
 
-            np.save(
-                os.path.join(outputs_dir, model_name, f"conv{conv_count}-kernels.npy"),
-                weights.float(),
-            )
-            np.savetxt(
-                os.path.join(outputs_dir, model_name, f"conv{conv_count}-mean.txt"),
-                mean.float(),
-            )
-            np.savetxt(
-                os.path.join(outputs_dir, model_name, f"conv{conv_count}-stdev.txt"),
-                std.float(),
-            )
+                mean = mean.reshape(1, -1)
+                std = std.reshape(1, -1)
 
-            conv_count += 1
+                np.save(
+                    os.path.join(outputs_dir, model_name, f"conv{conv_count}-kernels.npy"),
+                    weights.float(),
+                )
+                np.savetxt(
+                    os.path.join(outputs_dir, model_name, f"conv{conv_count}-mean.txt"),
+                    mean.float(),
+                )
+                np.savetxt(
+                    os.path.join(outputs_dir, model_name, f"conv{conv_count}-stdev.txt"),
+                    std.float(),
+                )
+
+                conv_count += 1
 
     for i, layer_spec in enumerate(layer_specs, 1):
 
@@ -1014,11 +991,7 @@ def compute_grad_cam(model, image, target_layers, class_label=0, device="cpu"):
 
     for i, w in enumerate(weights):
         cam += (
-            w
-            * target[
-                i,
-                :,
-            ]
+            w * target[i, :,]
         )
 
     cam[cam < 0] = 0.0
@@ -1164,16 +1137,160 @@ def save_intermediate_outputs(
             save_opf_dataset(_output_dir, opf_dataset)
 
 
-def get_arch_in_lids_format(architecture, split):
+def get_arch_operations(architecture,key,operations):
 
+    if not(isinstance(architecture, dict)):
+        return operations
+
+    if (key == "classifier"): #classifier does not belong to the IFT format
+        return operations
+
+    keys = list(architecture.keys())
+
+    if ("operation" in keys):
+        operations.append((key,architecture))
+        return operations
+
+    for k in keys:
+        operations = get_arch_operations(architecture[k],k,operations)
+
+    return operations
+
+
+def get_arch_in_lids_format(architecture):
+
+    operations = get_arch_operations(architecture,"",[])
+
+    conv_layers_count = 1
+    layer_idx = "1"
+    current_layer = "layer1"
+    layer_spec = {}
+    layer_spec[current_layer] = {}
+    lids_layer_specs = []
+    for i in range(len(operations)):
+        if (layer_idx != operations[i][0][-1]):
+            lids_layer_specs.append(layer_spec)
+            layer_spec = {}
+            layer_idx = operations[i][0][-1]
+            current_layer = "layer"+layer_idx
+            layer_spec[current_layer] = {}
+            
+        operation = operations[i][1]["operation"]
+        params = operations[i][1]["params"]
+
+        if ("m_norm" in operation):
+            norm_specs = {} 
+            if ("kernel_size" in params.keys()):
+                kernel_size = params["kernel_size"]
+                if isinstance(kernel_size, int):
+                    if (operation == "m_norm2d"):
+                        norm_specs["kernelsize"] = [kernel_size, kernel_size, 0]
+                    elif (operation == "m_norm3d"):
+                        norm_specs["kernelsize"] = [kernel_size, kernel_size, kernel_size]
+                else:
+                    if (operation == "m_norm2d"):
+                        norm_specs["kernelsize"] = [*kernel_size, 0]
+                    elif (operation == "m_norm3d"):
+                        norm_specs["kernelsize"] = [*kernel_size]
+            if ("dilation" in params.keys()):
+                dilation = params["dilation"]
+                if isinstance(dilation, int):
+                    if (operation == "m_norm2d"):
+                        norm_specs["dilationrate"] = [dilation, dilation, 0]
+                    elif (operation == "m_norm3d"):
+                        norm_specs["dilationrate"] = [dilation, dilation, dilation]
+                else:
+                    if (operation == "m_norm2d"):
+                        norm_specs["dilationrate"] = [*dilation, 0]
+                    elif (operation == "m_norm3d"):
+                        norm_specs["dilationrate"] = [*dilation]
+            if ("epsilon" in params.keys()):
+                norm_specs["epsilon"] = params["epsilon"]
+
+            layer_spec[current_layer]["m_norm"] = norm_specs
+
+        if ("conv" in operation):
+            conv_specs = {}
+            kernel_size = params["kernel_size"]
+            dilation = params["dilation"]
+            number_of_kernels_per_markers = params.get(
+                "number_of_kernels_per_marker", 8
+            )
+            out_channels = params["out_channels"]
+
+            if isinstance(kernel_size, int):
+                if (operation == "conv2d"):
+                    conv_specs["kernelsize"] = [kernel_size, kernel_size, 0]
+                elif (operation == "conv3d"):
+                    conv_specs["kernelsize"] = [kernel_size, kernel_size, kernel_size]
+            else:
+                if (operation == "conv2d"):
+                    conv_specs["kernelsize"] = [*kernel_size, 0]
+                elif (operation == "conv3d"):
+                    conv_specs["kernelsize"] = [*kernel_size]
+
+            if isinstance(dilation, int):
+                if (operation == "conv2d"):
+                    conv_specs["dilationrate"] = [dilation, dilation, 0]
+                elif (operation == "conv3d"):
+                    conv_specs["dilationrate"] = [dilation, dilation, dilation]
+            else:
+                if (operation == "conv2d"):
+                    conv_specs["dilationrate"] = [*dilation, 0]
+                elif (operation == "conv3d"):
+                    conv_specs["dilationrate"] = [*dilation]
+
+            conv_specs["nkernelspermarker"] = number_of_kernels_per_markers
+            conv_specs["finalnkernels"] = out_channels
+            conv_specs["nkernelsperimage"] = 10000                    
+            layer_spec[current_layer]["conv"] = conv_specs
+            conv_layers_count += 1
+            continue
+
+        if (operation == "relu"):
+            if (operation == "true"):
+                layer_spec[current_layer]["relu"] = 1
+            else:
+                layer_spec[current_layer]["relu"] = 0
+            continue
+
+        if ("pool" in operation):
+            pool_spec = {}
+            if ("max" in operation):
+                pool_spec["pool_type"] = 2
+            elif ("avg" in operation):
+                pool_spec["pool_type"] = 1
+
+            kernel_size = params["kernel_size"]
+            stride = params["stride"]
+
+            if isinstance(kernel_size, int):
+                kernel_size = [kernel_size, kernel_size]
+
+            pool_spec["poolxsize"] = kernel_size[0]
+            pool_spec["poolysize"] = kernel_size[1]
+            pool_spec["poolzsize"] = 0
+            if ("3d" in operation):
+                pool_spec["poolzsize"] = kernel_size[2]
+
+            pool_spec["stride"] = stride
+
+            layer_spec[current_layer]["pooling"] = pool_spec
+
+    lids_layer_specs.append(layer_spec)
+
+
+    '''
     layer_names = list(architecture["features"]["layers"].keys())
 
     layers = architecture["features"]["layers"]
 
+    lids_layer_specs = []
+    conv_layers_count = 1
+    
     operations = [layers[layer_name]["operation"] for layer_name in layer_names]
     conv_layers_count = 1
 
-    lids_layer_specs = []
     for i in range(len(layer_names)):
         layer_spec = {}
         if operations[i] == "conv2d":
@@ -1187,7 +1304,6 @@ def get_arch_in_lids_format(architecture, split):
             out_channels = params["out_channels"]
 
             layer_spec["layer"] = conv_layers_count
-            layer_spec["split"] = split
 
             if isinstance(kernel_size, int):
                 layer_spec["kernelsize"] = [kernel_size, kernel_size, 0]
@@ -1239,6 +1355,7 @@ def get_arch_in_lids_format(architecture, split):
             layer_spec["pooling"] = pool_spec
 
             lids_layer_specs.append(layer_spec)
+    '''
 
     return lids_layer_specs
 
