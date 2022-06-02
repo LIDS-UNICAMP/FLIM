@@ -296,6 +296,8 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
 
         """
+        if verbose:
+            print("Building model...")
 
         architecture = self._architecture
         images = self._images
@@ -325,6 +327,7 @@ class LCNCreator:
                 remove_similar_filters=remove_similar_filters,
                 similarity_level=similarity_level,
                 state_dict=state_dict,
+                verbose=verbose,
             )
 
             input_shape = module_output_shape
@@ -419,6 +422,7 @@ class LCNCreator:
         remove_similar_filters=False,
         similarity_level=0.85,
         state_dict=None,
+        verbose=False,
     ):
         """Builds a module.
 
@@ -448,6 +452,8 @@ class LCNCreator:
         nn.Module
             A PyTorch module.
         """
+        if verbose:
+            print(f"Building module {module_name}...")
         device = self.device
 
         batch_size = self._batch_size
@@ -489,7 +495,8 @@ class LCNCreator:
                 input_shape = _layer_output_shape
 
             else:
-
+                if verbose:
+                    print(f"Building layer {key}...")
                 _assert_params(layer_config)
 
                 operation = __operations__[layer_config["operation"]]
@@ -542,6 +549,7 @@ class LCNCreator:
                             similarity_level,
                             input_shape,
                             layer_config,
+                            verbose=verbose,
                         )
 
                         layer.weight.data = weights
@@ -574,6 +582,7 @@ class LCNCreator:
                             similarity_level,
                             input_shape,
                             layer_config,
+                            verbose=verbose,
                         )
 
                     is_3d = layer_config["operation"] == "conv3d"
@@ -1022,6 +1031,7 @@ class LCNCreator:
         similarity_level,
         input_shape,
         layer_config,
+        verbose=False,
     ):
 
         operation_name = layer_config["operation"]
@@ -1094,7 +1104,7 @@ class LCNCreator:
             wd=wd,
             multi_level_clustering=self._multilevel_clustering,
             device=self.device,
-            verbose=self._verbose,
+            verbose=verbose,
         )
         if out_channels is not None:
             assert (
@@ -1257,7 +1267,9 @@ def _enforce_norm(kernels):
     return centered
 
 
-def _create_random_pca_kernels(n, k, in_channels, kernel_size):
+def _create_random_pca_kernels(n, k, in_channels, kernel_size, verbose=False):
+    if verbose:
+        print("Creating random kernels with PCA...")
 
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * 2
@@ -1266,14 +1278,15 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
 
     kernels = _enforce_norm(_create_random_kernels(n, in_channels, kernel_size))
 
-    kernels_pca = _select_kernels_with_pca(kernels, k)
+    kernels_pca = _select_kernels_with_pca(kernels, k, verbose=verbose)
 
     return kernels_pca
 
 
-def _select_kernels_with_pca(kernels, k, scale_kernels=False):
+def _select_kernels_with_pca(kernels, k, scale_kernels=False, verbose=False):
+    if verbose:
+        print("Selecting kernels with PCA...")
     kernels_shape = kernels.shape
-
     kernels_flatted = kernels.reshape(kernels_shape[0], -1)
     if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
         k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
@@ -1290,7 +1303,9 @@ def _select_kernels_with_pca(kernels, k, scale_kernels=False):
     return kernels_pca
 
 
-def _generate_patches(images, markers, in_channels, kernel_size, dilation):
+def _generate_patches(
+    images, markers, in_channels, kernel_size, dilation, verbose=False
+):
     """Get patches from markers pixels.
 
         Get a patch of size :math:`k \times k` around each markers pixel.
@@ -1442,6 +1457,7 @@ def _kmeans_roots(
     return_labels=False,
     random_state=None,
     distance_metric="euclidean",
+    verbose=False,
 ):
     """Cluster patch and return the root of each custer.
 
@@ -1462,6 +1478,8 @@ def _kmeans_roots(
         A array with all the roots.
 
     """
+    if verbose:
+        print("Clustering...")
     roots = None
     min_number_of_pacthes_per_label = n_clusters_per_label
 
@@ -1596,7 +1614,9 @@ def _calculate_convNd_weights(
             verbose,
         )
     else:
-        kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
+        kernel_weights = _kmeans_roots(
+            patches, labels, number_of_kernels_per_marker, verbose=verbose
+        )
 
         # force norm 1
         kernel_weights = force_norm_1(kernel_weights)
@@ -1648,7 +1668,7 @@ def _compute_kernels_with_backpropagation(
             kernels = kernels.reshape(-1, *kernel_shape)
             kernels = force_norm_1(kernels)
             kernels = _kernels_to_channel_first(kernels)
-            kernels = _select_kernels_with_pca(kernels, num_kernels)
+            kernels = _select_kernels_with_pca(kernels, num_kernels, verbose=verbose)
             bias = np.zeros(num_kernels, dtype=np.float32)
             kernels = _kernels_to_channel_last(kernels)
             # TODO do not return form here
@@ -1821,12 +1841,19 @@ def _initialize_convNd_weights(
                 and (np.prod(kernels_weights.shape[1:]) < kernels_weights.shape[0])
             ):
                 kernels_weights = _select_kernels_with_pca(
-                    kernels_weights, out_channels
+                    kernels_weights, out_channels, verbose=verbose
                 )
 
             elif (out_channels is not None) and (
                 out_channels < kernels_weights.shape[0]
             ):
+                if use_pca:
+                    warnings.warn(
+                        "Not enough kernels were generated to select with PCA. "
+                        "Using clustering instead.",
+                        UserWarning,
+                    )
+
                 kernels_weights = _kmeans_roots(
                     kernels_weights,
                     np.ones(kernels_weights.shape[0]),
