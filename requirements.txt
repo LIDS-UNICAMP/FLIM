@@ -1,12 +1,12 @@
+torch>=1.10.0
+torchvision>=0.11.2
 numpy>=1.20
-torch==1.9.1
-torchvision
-setuptools
-scikit-image
-sklearn
-termcolor 
-numba
-nibabel
+scikit-image>=0.19.2
+scikit-learn>=1.0.0
+setuptools>=62.3.2
+numba>=0.55.2
+termcolor>=1.1.0
+nibabel>=3.2.2
 napari[pyqt5]
 magicgui
 

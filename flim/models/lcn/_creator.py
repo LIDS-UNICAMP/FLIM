@@ -76,6 +76,100 @@ class LabelSmoothingLoss(nn.Module):
         return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
 
 
+class NetworkNode:
+    def __init__(self, name, arch, is_module):
+        self._name = name
+        self._arch = arch
+        self._is_module = is_module
+        self._neighbors = []
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def arch(self):
+        return self._arch
+
+    @property
+    def is_module(self):
+        return self._is_module
+
+    @property
+    def neighbors(self):
+        return self._neighbors
+
+    def add_neighbor(self, neighbor):
+        self._neighbors.append(neighbor)
+
+    def __str__(self):
+        return f"Node(name={self._name}, is_module={self._is_module})"
+
+
+class NetworkDiGraph:
+    def __init__(self, arch):
+        self._arch = arch
+        self._vertex_dict = {}
+
+        self._create_digraph_representation()
+
+    def _create_module_digraph_representation(self, parent_node, module_name, arch):
+        module_type = arch.get("type", "sequential")
+        module_layer = []
+
+        layers_arch = arch["layers"]
+        module_layer.append(parent_node)
+
+        has_non_module_layer = False
+        for key in layers_arch:
+            layer_config = layers_arch[key]
+            if "type" in layer_config:
+                last_node = self._create_module_digraph_representation(
+                    module_layer[-1], module_name + "." + key, layer_config
+                )
+                module_layer.append(last_node)
+            else:
+                node_name = module_name + "." + key
+                node = NetworkNode(node_name, layer_config, is_module=False)
+                self._vertex_dict[node_name] = node
+                module_layer.append(node)
+                has_non_module_layer = True
+
+        if has_non_module_layer:
+            if module_type == "sequential":
+                reversed_module_layer = list(reversed(module_layer))
+                for i, node in enumerate(reversed_module_layer[:-1]):
+                    node.add_neighbor(reversed_module_layer[i + 1])
+
+            # elif module_type == "parallel":
+            #     for node in module_layer:
+            #         node.add_neighbor(module_node)
+        return module_layer[-1]
+
+    def _create_digraph_representation(self):
+        source_node = NetworkNode("input", None, is_module=False)
+        self._vertex_dict["input"] = source_node
+
+        for module_name, arch in self._arch.items():
+            self._create_module_digraph_representation(source_node, module_name, arch)
+
+    @property
+    def vertices(self):
+        return self._vertex_dict
+
+    def dfs_from_vertex(self, vertex_name):
+        vertex = self._vertex_dict[vertex_name]
+        visited = set()
+        stack = []
+        stack.extend(vertex.neighbors)
+        while stack:
+            vertex = stack.pop()
+            if vertex not in visited:
+                visited.add(vertex)
+                yield vertex
+                stack.extend(vertex.neighbors)
+
+
 class LCNCreator:
 
     """Class to build and a LIDSConvNet.
@@ -178,14 +272,10 @@ class LCNCreator:
 
         self._outputs = dict()
 
-        self._skips = _find_skip_connections(self._architecture)
-        self._to_save_outputs = _find_outputs_to_save(self._skips)
-
         self.LCN = LIDSConvNet(
-            skips=self._skips,
-            outputs_to_save=self._to_save_outputs,
             remove_boder=remove_border,
         )
+        self._digraph = NetworkDiGraph(self._architecture)
 
     def build_model(
         self,
@@ -206,6 +296,8 @@ class LCNCreator:
             only one of them are kept. by default 0.85.
 
         """
+        if verbose:
+            print("Building model...")
 
         architecture = self._architecture
         images = self._images
@@ -226,10 +318,6 @@ class LCNCreator:
             input_shape = images[0].shape
 
         for module_name, module_arch in architecture.items():
-
-            if "input" in self._to_save_outputs:
-                self._outputs["input"] = images
-
             module, module_output_shape, images, markers = self._build_module(
                 module_name,
                 module_arch,
@@ -239,6 +327,7 @@ class LCNCreator:
                 remove_similar_filters=remove_similar_filters,
                 similarity_level=similarity_level,
                 state_dict=state_dict,
+                verbose=verbose,
             )
 
             input_shape = module_output_shape
@@ -333,6 +422,7 @@ class LCNCreator:
         remove_similar_filters=False,
         similarity_level=0.85,
         state_dict=None,
+        verbose=False,
     ):
         """Builds a module.
 
@@ -362,6 +452,8 @@ class LCNCreator:
         nn.Module
             A PyTorch module.
         """
+        if verbose:
+            print(f"Building module {module_name}...")
         device = self.device
 
         batch_size = self._batch_size
@@ -403,7 +495,8 @@ class LCNCreator:
                 input_shape = _layer_output_shape
 
             else:
-
+                if verbose:
+                    print(f"Building layer {key}...")
                 _assert_params(layer_config)
 
                 operation = __operations__[layer_config["operation"]]
@@ -422,6 +515,26 @@ class LCNCreator:
                         if "wd" not in operation_params:
                             operation_params["wd"] = module_params.get("wd", 0.9)
 
+                    # check if there is a pool operation with stride > 1 before convolution
+                    dilation_due_to_pool = 1
+                    if operation_params.get("train_dilation", False) is True:
+                        for node in self._digraph.dfs_from_vertex(
+                            module_name + "." + key
+                        ):
+                            if (
+                                not node.is_module
+                                and node.arch
+                                and "pool" in node.arch["operation"]
+                            ):
+                                if node.arch["params"]["stride"] > 1:
+                                    dilation_due_to_pool *= node.arch["params"][
+                                        "stride"
+                                    ]
+
+                    original_dilation = operation_params.get("dilation", 1)
+                    layer_config["params"]["dilation"] = (
+                        dilation_due_to_pool * original_dilation
+                    )
                     # check is state_dict has the weights for this layer
                     if (
                         state_dict is not None
@@ -436,6 +549,7 @@ class LCNCreator:
                             similarity_level,
                             input_shape,
                             layer_config,
+                            verbose=verbose,
                         )
 
                         layer.weight.data = weights
@@ -468,10 +582,14 @@ class LCNCreator:
                             similarity_level,
                             input_shape,
                             layer_config,
+                            verbose=verbose,
                         )
 
                     is_3d = layer_config["operation"] == "conv3d"
                     end = 3 if is_3d else 2
+
+                    # chage dilation to original value
+                    layer_config["params"]["dilation"] = original_dilation
 
                     if len(input_shape) > 1:
                         _layer_output_shape = [*input_shape[:end], layer.out_channels]
@@ -522,7 +640,10 @@ class LCNCreator:
                         std_by_channel = state_dict[f"{new_module_name}.std_by_channel"]
 
                         layer = self._build_m_norm_layer(
-                            None, None, input_shape, layer_config,
+                            None,
+                            None,
+                            input_shape,
+                            layer_config,
                         )
                         layer.weight.data = weights
                         layer.bias.data = bias
@@ -591,9 +712,23 @@ class LCNCreator:
                     or layer_config["operation"] == "max_pool3d"
                     or layer_config["operation"] == "avg_pool3d"
                 ):
+                    dilation_due_to_pool = 1
+                    if operation_params.get("train_dilation", False) is True:
+                        for node in self._digraph.dfs_from_vertex(
+                            module_name + "." + key
+                        ):
+                            if (
+                                not node.is_module
+                                and node.arch
+                                and "pool" in node.arch["operation"]
+                            ):
+                                if node.arch["params"]["stride"] > 1:
+                                    dilation_due_to_pool *= node.arch["params"][
+                                        "stride"
+                                    ]
 
                     layer, _ = self._build_pool_layer(
-                        images, markers, batch_size, layer_config
+                        images, markers, batch_size, layer_config, dilation_due_to_pool
                     )
 
                     is_3d = "3d" in layer_config["operation"]
@@ -755,7 +890,9 @@ class LCNCreator:
                     module_output_shape[2] -= 2 * self._remove_border
         return module, module_output_shape, images, markers
 
-    def _build_pool_layer(self, images, markers, batch_size, layer_config):
+    def _build_pool_layer(
+        self, images, markers, batch_size, layer_config, dilation_due_to_pool
+    ):
         device = self.device
         f_operations = {
             "max_pool2d": F.max_pool2d,
@@ -767,23 +904,23 @@ class LCNCreator:
         operation_params = layer_config["params"]
         operation = __operations__[operation_name]
         f_pool = f_operations[operation_name]
+        original_dilation = operation_params.get("dilation", 1)
 
         is_3d = "3d" in operation_name
 
         stride = operation_params.get("stride", 1)
         kernel_size = operation_params["kernel_size"]
+        padding = operation_params.get("padding", 0)
+        dilation = dilation_due_to_pool * original_dilation
 
-        if "padding" in operation_params:
-            padding = operation_params["padding"]
-            if isinstance(padding, int):
-                padding = [padding] * (3 if is_3d else 2)
-        else:
-            padding = [0] * (3 if is_3d else 2)
+        if isinstance(padding, int):
+            padding = [padding] * (3 if is_3d else 2)
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * (3 if is_3d else 2)
 
         operation_params["stride"] = 1
+        operation_params["dilation"] = dilation_due_to_pool
         # TODO what about dilation?
         # operation_params["padding"] = [k_size // 2 for k_size in kernel_size]
         if images is not None and markers is not None:
@@ -806,7 +943,13 @@ class LCNCreator:
                     for i in range(0, input_size, batch_size):
                         batch = torch_images[i : i + batch_size]
                         batch = batch.to(device)
-                        output = f_pool(batch, **operation_params)
+                        output = f_pool(
+                            batch,
+                            kernel_size=kernel_size,
+                            stride=stride,
+                            padding=padding,
+                            dilation=dilation,
+                        )
                         output = output.detach().cpu()
                         outputs = torch.cat((outputs, output))
 
@@ -825,7 +968,11 @@ class LCNCreator:
 
         operation_params["stride"] = stride
         operation_params["padding"] = padding
-        layer = operation(**operation_params)
+        operation_params["dilation"] = original_dilation
+        dilation = original_dilation
+        layer = operation(
+            kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation
+        )
         return layer, images
 
     def _build_m_norm_layer(self, images, markers, input_shape, layer_config):
@@ -884,6 +1031,7 @@ class LCNCreator:
         similarity_level,
         input_shape,
         layer_config,
+        verbose=False,
     ):
 
         operation_name = layer_config["operation"]
@@ -956,7 +1104,7 @@ class LCNCreator:
             wd=wd,
             multi_level_clustering=self._multilevel_clustering,
             device=self.device,
-            verbose=self._verbose,
+            verbose=verbose,
         )
         if out_channels is not None:
             assert (
@@ -1096,45 +1244,6 @@ def _pooling_markers(markers, kernel_size, stride=1, padding=0):
     return np.array(new_markers)
 
 
-def _find_skip_connections_in_module(module_name, module):
-    skips = dict()
-
-    layers = module["layers"]
-
-    for layer_name, layer_config in layers.items():
-        key_name = (
-            f"{module_name}.{layer_name}" if module_name is not None else layer_name
-        )
-
-        if "type" in layer_config:
-            submodules_skips = _find_skip_connections_in_module(key_name, layer_config)
-
-            skips.update(submodules_skips)
-
-        if "inputs" in layer_config:
-            skips[key_name] = layer_config["inputs"]
-
-    return skips
-
-
-def _find_skip_connections(arch):
-    skips = dict()
-    for module_name, module_arch in arch.items():
-        sub_modules_skips = _find_skip_connections_in_module(module_name, module_arch)
-        skips.update(sub_modules_skips)
-    return skips
-
-
-def _find_outputs_to_save(skips):
-    outputs_to_save = {}
-    for _, inputs in skips.items():
-
-        for layer_name in inputs:
-            outputs_to_save[layer_name] = True
-
-    return outputs_to_save
-
-
 def _create_random_kernels(n, in_channels, kernel_size):
     kernels = np.random.rand(n, in_channels, *kernel_size)
 
@@ -1158,7 +1267,9 @@ def _enforce_norm(kernels):
     return centered
 
 
-def _create_random_pca_kernels(n, k, in_channels, kernel_size):
+def _create_random_pca_kernels(n, k, in_channels, kernel_size, verbose=False):
+    if verbose:
+        print("Creating random kernels with PCA...")
 
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * 2
@@ -1167,14 +1278,15 @@ def _create_random_pca_kernels(n, k, in_channels, kernel_size):
 
     kernels = _enforce_norm(_create_random_kernels(n, in_channels, kernel_size))
 
-    kernels_pca = _select_kernels_with_pca(kernels, k)
+    kernels_pca = _select_kernels_with_pca(kernels, k, verbose=verbose)
 
     return kernels_pca
 
 
-def _select_kernels_with_pca(kernels, k, scale_kernels=False):
+def _select_kernels_with_pca(kernels, k, scale_kernels=False, verbose=False):
+    if verbose:
+        print("Selecting kernels with PCA...")
     kernels_shape = kernels.shape
-
     kernels_flatted = kernels.reshape(kernels_shape[0], -1)
     if k > kernels_flatted.shape[0] or k > kernels_flatted.shape[1]:
         k = min(kernels_flatted.shape[0], kernels_flatted.shape[1])
@@ -1191,7 +1303,9 @@ def _select_kernels_with_pca(kernels, k, scale_kernels=False):
     return kernels_pca
 
 
-def _generate_patches(images, markers, in_channels, kernel_size, dilation):
+def _generate_patches(
+    images, markers, in_channels, kernel_size, dilation, verbose=False
+):
     """Get patches from markers pixels.
 
         Get a patch of size :math:`k \times k` around each markers pixel.
@@ -1343,6 +1457,7 @@ def _kmeans_roots(
     return_labels=False,
     random_state=None,
     distance_metric="euclidean",
+    verbose=False,
 ):
     """Cluster patch and return the root of each custer.
 
@@ -1363,6 +1478,8 @@ def _kmeans_roots(
         A array with all the roots.
 
     """
+    if verbose:
+        print("Clustering...")
     roots = None
     min_number_of_pacthes_per_label = n_clusters_per_label
 
@@ -1497,7 +1614,9 @@ def _calculate_convNd_weights(
             verbose,
         )
     else:
-        kernel_weights = _kmeans_roots(patches, labels, number_of_kernels_per_marker)
+        kernel_weights = _kmeans_roots(
+            patches, labels, number_of_kernels_per_marker, verbose=verbose
+        )
 
         # force norm 1
         kernel_weights = force_norm_1(kernel_weights)
@@ -1549,7 +1668,7 @@ def _compute_kernels_with_backpropagation(
             kernels = kernels.reshape(-1, *kernel_shape)
             kernels = force_norm_1(kernels)
             kernels = _kernels_to_channel_first(kernels)
-            kernels = _select_kernels_with_pca(kernels, num_kernels)
+            kernels = _select_kernels_with_pca(kernels, num_kernels, verbose=verbose)
             bias = np.zeros(num_kernels, dtype=np.float32)
             kernels = _kernels_to_channel_last(kernels)
             # TODO do not return form here
@@ -1722,12 +1841,19 @@ def _initialize_convNd_weights(
                 and (np.prod(kernels_weights.shape[1:]) < kernels_weights.shape[0])
             ):
                 kernels_weights = _select_kernels_with_pca(
-                    kernels_weights, out_channels
+                    kernels_weights, out_channels, verbose=verbose
                 )
 
             elif (out_channels is not None) and (
                 out_channels < kernels_weights.shape[0]
             ):
+                if use_pca:
+                    warnings.warn(
+                        "Not enough kernels were generated to select with PCA. "
+                        "Using clustering instead.",
+                        UserWarning,
+                    )
+
                 kernels_weights = _kmeans_roots(
                     kernels_weights,
                     np.ones(kernels_weights.shape[0]),

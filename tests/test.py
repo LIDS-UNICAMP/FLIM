@@ -207,5 +207,89 @@ class TestConvWithBias(TestCase):
         self.assertIsNotNone(model.module.conv.bias)
 
 
+class TestTrainDilation(TestCase):
+    def test_train_dilation(self):
+        arch = {
+            "module": {
+                "type": "sequential",
+                "layers": {
+                    "conv1": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 2,
+                            "dilation": 1,
+                            "out_channels": 27,
+                            "bias": False,
+                            "use_pca": True,
+                            "train_dilation": True,
+                        },
+                    },
+                    "relu1": {
+                        "operation": "relu",
+                        "params": {},
+                    },
+                    "pool1": {
+                        "operation": "max_pool2d",
+                        "params": {
+                            "kernel_size": 2,
+                            "stride": 2,
+                            "padding": 0,
+                            "dilation": 1,
+                            "train_dilation": True,
+                        },
+                    },
+                    "conv2": {
+                        "operation": "conv2d",
+                        "params": {
+                            "kernel_size": 3,
+                            "stride": 1,
+                            "padding": 2,
+                            "dilation": 1,
+                            "out_channels": 64,
+                            "bias": False,
+                            "use_pca": True,
+                            "train_dilation": True,
+                        },
+                    },
+                    "relu2": {
+                        "operation": "relu",
+                        "params": {},
+                    },
+                    "pool2": {
+                        "operation": "max_pool2d",
+                        "params": {
+                            "kernel_size": 2,
+                            "stride": 2,
+                            "padding": 0,
+                            "dilation": 1,
+                            "train_dilation": True,
+                        },
+                    },
+                },
+            }
+        }
+
+        images, markers = flim_utils.load_images_and_markers(
+            path.join(path.dirname(__file__), "data", "images_and_markers")
+        )
+        creator = LCNCreator(
+            architecture=arch,
+            images=images,
+            markers=markers,
+            device=device,
+            relabel_markers=False,
+        )
+
+        creator.build_model()
+        model = creator.get_LIDSConvNet().to(device)
+
+        fake_input = torch.rand((1, 3, 256, 256), dtype=torch.float32, device=device)
+        output = model(fake_input)
+
+        self.assertEqual(output.shape, torch.Size([1, 64, 256 // 4, 256 // 4]))
+
+
 if __name__ == "__main__":
     unittest.main()
