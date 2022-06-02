@@ -479,6 +479,36 @@ def load_torchvision_model_weights(model, weigths_path):
     return model
 
 
+def shift_weights(in_weights, layer):
+
+    kn = 1 #neutral element
+    for i in range(len(layer.kernel_size)):
+        kn = kn * layer.kernel_size[i]
+    
+    mid_index = int(kn/2)+1
+
+
+    in_channels = layer.in_channels
+
+
+    weights = np.concatenate((in_weights[in_channels:mid_index*in_channels],in_weights[0:in_channels],in_weights[mid_index*in_channels:]), axis=0)
+    return weights
+
+
+def unshift_weights(in_weights, layer):
+
+    kn = 1 #neutral element
+    for i in range(len(layer.kernel_size)):
+        kn = kn * layer.kernel_size[i]
+    
+    mid_index = int(kn/2)
+
+
+    in_channels = layer.in_channels
+
+    weights = np.concatenate((in_weights[mid_index*in_channels:(mid_index+1)*in_channels],in_weights[0:mid_index*in_channels],in_weights[(mid_index+1)*in_channels:]), axis=0)
+    return weights
+
 def load_weights_from_lids_model(model, lids_model_dir):
     print("Loading LIDS model...")
 
@@ -506,7 +536,7 @@ def load_weights_from_lids_model(model, lids_model_dir):
 
         if isinstance(layer, nn.Conv2d):
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
-                weights = np.load(os.path.join(lids_model_dir, f"{name}-kernels.npy"))
+                weights = shift_weights(np.load(os.path.join(lids_model_dir, f"{name}-kernels.npy")), layer)
 
                 in_channels = layer.in_channels
                 out_channels = layer.out_channels
@@ -514,15 +544,16 @@ def load_weights_from_lids_model(model, lids_model_dir):
 
                 weights = weights.transpose()
                 weights = weights.reshape(
-                    out_channels, in_channels, kernel_size[1], kernel_size[0],
+                    out_channels, kernel_size[1], kernel_size[0],in_channels,
                 )
+                weights = weights.transpose(0,3,1,2)
 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
 
         if isinstance(layer, nn.Conv3d):
 
             if os.path.exists(os.path.join(lids_model_dir, f"{name}-kernels.npy")):
-                weights = np.load(os.path.join(lids_model_dir, f"{name}-kernels.npy"))
+                weights = shift_weights(np.load(os.path.join(lids_model_dir, f"{name}-kernels.npy")), layer)
 
                 in_channels = layer.in_channels
                 out_channels = layer.out_channels
@@ -531,11 +562,11 @@ def load_weights_from_lids_model(model, lids_model_dir):
                 weights = weights.transpose()
                 weights = weights.reshape(
                     out_channels,
-                    in_channels,
-                    kernel_size[0],
-                    kernel_size[1],
                     kernel_size[2],
-                )
+                    kernel_size[1],
+                    kernel_size[0],
+                    in_channels
+                ).transpose(0,4,1,2,3)
 
                 layer.weight = nn.Parameter(torch.from_numpy(weights).float())
 
@@ -578,7 +609,6 @@ def save_lids_model(model, architecture, outputs_dir, model_name):
     layer_specs = get_arch_in_lids_format(architecture)
     conv_count = 1
     for _, layer in model.named_children():
-        print(layer,type(layer))
         if isinstance(layer, nn.Sequential):
             norm_index = 0
             conv_index = 0
@@ -589,12 +619,23 @@ def save_lids_model(model, architecture, outputs_dir, model_name):
                 else:
                     continue
 
-                weights = layer[conv_index].weight.detach().cpu()
+                weights = layer[conv_index].weight.detach().cpu().numpy()
 
-                num_kernels = weights.size(0)
-                weights = weights.reshape(num_kernels, -1)
+                if (isinstance(layer[conv_index], Conv3d)):
 
-                weights = weights.transpose(0, 1)
+                    weights = weights.transpose(0,2,3,4,1)
+
+                else:
+                    #2d
+                    weights = weights.transpose(0,2,3,1)
+
+
+                out_channels = weights.shape[0]
+                weights = weights.reshape(out_channels, -1)
+
+                weights = weights.transpose()
+
+                weights = unshift_weights(weights, layer[conv_index])
 
                 mean = layer[norm_index].mean_by_channel.detach().cpu()
                 std = layer[norm_index].std_by_channel.detach().cpu()
@@ -604,7 +645,7 @@ def save_lids_model(model, architecture, outputs_dir, model_name):
 
                 np.save(
                     os.path.join(outputs_dir, model_name, f"conv{conv_count}-kernels.npy"),
-                    weights.float(),
+                    weights,
                 )
                 np.savetxt(
                     os.path.join(outputs_dir, model_name, f"conv{conv_count}-mean.txt"),
